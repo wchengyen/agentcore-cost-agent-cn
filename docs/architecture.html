@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cost Agent on AgentCore（AWS 中國區）系統介紹</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <p class="kicker">內部技術說明 · 2026-11-20 · 帳號 &lt;ACCOUNT_ID&gt; · cn-north-1</p>
+    <h1>中國區沒有 AgentCore Memory，<br>照樣能跑一個記得上下文的成本分析 Agent</h1>
+  </div>
+</header>
+<style>
+:root{
+  --page-ink:#10233f; --page-accent:#0e7c66; --page-accent-tint:#e3f2ee;
+  --page-bg:#f6f7f9; --page-surface:#ffffff; --page-text:#1b2430; --page-muted:#5b6576;
+  --page-rule:#d9dee5; --page-faint:#eef1f4; --page-warn:#8a5a00; --page-warn-tint:#fdf3dc;
+  --page-sans:"IBM Plex Sans","Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;
+  --page-mono:"IBM Plex Mono",Consolas,"Courier New",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--page-bg);color:var(--page-text);font-family:var(--page-sans);line-height:1.65;font-size:15.5px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+.top{background:var(--page-ink);color:#fff;padding:56px 0 40px}
+.kicker{font-family:var(--page-mono);font-size:12.5px;color:#9fb3cc;margin:0 0 18px;letter-spacing:.02em}
+h1{font-size:clamp(28px,4.6vw,50px);line-height:1.18;margin:0;font-weight:700;letter-spacing:-.01em;max-width:960px}
+.lede{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:48px;padding:36px 0 8px}
+.lede p{font-size:17px;margin:0 0 12px;color:var(--page-text)}
+.facts{border-left:3px solid var(--page-accent);padding:4px 0 4px 20px;margin:0}
+.facts div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--page-rule);padding:7px 0;font-size:14px}
+.facts dt{color:var(--page-muted)} .facts dd{margin:0;font-family:var(--page-mono);font-size:13px;text-align:right}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 20px;padding:18px 0 6px;border-bottom:1px solid var(--page-rule);font-size:14px}
+nav.toc a{color:var(--page-ink);text-decoration:none;border-bottom:1px solid transparent}
+nav.toc a:hover{border-bottom-color:var(--page-accent)}
+section{padding:44px 0 8px}
+h2{font-size:clamp(21px,2.6vw,28px);line-height:1.3;margin:0 0 6px;color:var(--page-ink)}
+h2 .n{font-family:var(--page-mono);font-size:14px;color:var(--page-accent);display:block;margin-bottom:6px;font-weight:500}
+h3{font-size:17px;margin:26px 0 8px;color:var(--page-ink)}
+.sub{color:var(--page-muted);margin:0 0 20px;max-width:780px}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:36px}
+.diagram{background:var(--page-surface);border:1px solid var(--page-rule);padding:16px;overflow-x:auto}
+.diagram svg{display:block;min-width:940px;width:100%;height:auto}
+.src{font-size:12.5px;color:var(--page-muted);margin:8px 0 0}
+table{width:100%;border-collapse:collapse;font-size:14px;background:var(--page-surface)}
+th{text-align:left;font-weight:600;color:var(--page-muted);font-size:12.5px;padding:10px 12px;border-bottom:2px solid var(--page-ink)}
+td{padding:10px 12px;border-bottom:1px solid var(--page-rule);vertical-align:top}
+td code,p code,li code{font-family:var(--page-mono);font-size:12.5px;background:var(--page-faint);padding:1px 5px}
+.tbl{overflow-x:auto}
+.tag{display:inline-block;font-family:var(--page-mono);font-size:11.5px;padding:1px 7px;border:1px solid var(--page-rule);white-space:nowrap}
+.tag.on{background:var(--page-accent);color:#fff;border-color:var(--page-accent)}
+.tag.part{background:var(--page-accent-tint);color:var(--page-accent);border-color:var(--page-accent)}
+.tag.off{color:var(--page-muted)}
+.num{text-align:right;font-family:var(--page-mono);font-variant-numeric:tabular-nums}
+ol.steps{counter-reset:s;list-style:none;padding:0;margin:0}
+ol.steps li{counter-increment:s;position:relative;padding:12px 0 12px 46px;border-bottom:1px solid var(--page-rule)}
+ol.steps li::before{content:counter(s,decimal-leading-zero);position:absolute;left:0;top:12px;font-family:var(--page-mono);color:var(--page-accent);font-weight:500}
+ol.steps b{color:var(--page-ink)}
+pre{background:var(--page-ink);color:#e6edf5;font-family:var(--page-mono);font-size:13px;line-height:1.55;padding:16px 18px;overflow-x:auto;margin:10px 0 18px}
+pre .c{color:#8fa6c2}
+.note{background:var(--page-warn-tint);border-left:3px solid var(--page-warn);padding:14px 18px;margin:18px 0;font-size:14.5px}
+.note b{color:var(--page-warn)}
+.rule{border-left:3px solid var(--page-accent);background:var(--page-surface);padding:14px 18px;margin:14px 0;font-size:14.5px}
+ul.plain{padding-left:18px;margin:8px 0} ul.plain li{margin:4px 0}
+footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule);color:var(--page-muted);font-size:13px}
+@media (max-width:820px){.lede,.two{grid-template-columns:minmax(0,1fr);gap:24px}}
+@media (prefers-reduced-motion:no-preference){.fade{animation:fade .45s ease-out both}@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}}
+</style>
+
+<main class="wrap">
+  <div class="lede">
+    <div>
+      <p>這份文件介紹一個部署在 <b>Amazon Bedrock AgentCore（北京區）</b>上的成本分析 Agent。使用者用中文提問，Agent 會自己決定要查哪些 Cost Explorer 數據，在沙盒裡做計算，最後回報成本變化。</p>
+      <p>中國區的 AgentCore 沒有 Memory，也不能用 Bedrock 模型，所以有兩處自建：短期記憶用 S3 存對話歷史，長期記憶用 DynamoDB 存結論；模型則改走 OpenAI 兼容的 Kimi API。其他部分都用 AgentCore 的托管能力。</p>
+    </div>
+    <dl class="facts">
+      <div><dt>Runtime</dt><dd>costagent-&lt;RUNTIME_SUFFIX&gt; · v3</dd></div>
+      <div><dt>Gateway</dt><dd>&lt;GATEWAY_ID&gt;</dd></div>
+      <div><dt>MCP 工具數</dt><dd>9</dd></div>
+      <div><dt>模型</dt><dd>k3.1-pro（Kimi Code）</dd></div>
+      <div><dt>成本 API</dt><dd>ce.cn-northwest-1</dd></div>
+      <div><dt>成本口徑</dt><dd>UnblendedCost</dd></div>
+      <div><dt>專案路徑</dt><dd>C:\code\agentcode-ce</dd></div>
+    </dl>
+  </div>
+
+  <nav class="toc">
+    <a href="#arch">整體架構</a><a href="#agentcore">用了 AgentCore 哪些部分</a><a href="#memory">Memory 替代方案</a>
+    <a href="#flow">一次請求怎麼跑</a><a href="#tools">工具與數據來源</a><a href="#rules">分析規則</a>
+    <a href="#usage">使用方式</a><a href="#ops">運維、費用與已知問題</a>
+  </nav>
+
+  <section id="arch">
+    <h2><span class="n">01 · 整體架構</span>Agent 本身不碰成本數據，所有 CE 查詢都經過 Gateway 交給 Lambda</h2>
+    <p class="sub">青綠色線是一次成本查詢的主路徑。Runtime 裡的 Agent 只負責決定查什麼、怎麼算、怎麼寫。實際呼叫 Cost Explorer 的是 Lambda，用的是 Lambda 執行角色的權限。</p>
+    <div class="diagram">
+<svg viewBox="0 0 1000 650" xmlns="http://www.w3.org/2000/svg" font-family="IBM Plex Sans, Noto Sans TC, Microsoft JhengHei, sans-serif" role="img" aria-label="Cost Agent 架構圖">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8893a3"/></marker>
+    <marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0e7c66"/></marker>
+  </defs>
+  <style>
+    .bx{fill:#fff;stroke:#b8c1cd;stroke-width:1.2}
+    .bxa{fill:#fff;stroke:#0e7c66;stroke-width:2}
+    .grp{fill:#f3f6f9;stroke:#10233f;stroke-width:1.4;stroke-dasharray:5 4}
+    .t{font-size:14px;font-weight:600;fill:#10233f}
+    .s{font-size:11.5px;fill:#5b6576}
+    .m{font-family:IBM Plex Mono,Consolas,monospace;font-size:10.5px;fill:#5b6576}
+    .ln{stroke:#8893a3;stroke-width:1.4;fill:none}
+    .la{stroke:#0e7c66;stroke-width:2.4;fill:none}
+    .lb{font-size:11px;fill:#5b6576;paint-order:stroke;stroke:#fff;stroke-width:4px}
+    .lba{font-size:11px;fill:#0e7c66;font-weight:600;paint-order:stroke;stroke:#fff;stroke-width:4px}
+    .gl{font-size:12px;font-weight:700;fill:#10233f;letter-spacing:.04em}
+  </style>
+
+  <!-- user -->
+  <rect class="bx" x="20" y="230" width="160" height="96"/>
+  <text class="t" x="34" y="258">使用者</text>
+  <text class="s" x="34" y="280">Streamlit 前端</text>
+  <text class="m" x="34" y="298">127.0.0.1:8501</text>
+  <text class="m" x="34" y="314">或 agentcore CLI / boto3</text>
+
+  <!-- runtime group -->
+  <rect class="grp" x="225" y="40" width="345" height="480"/>
+  <text class="gl" x="240" y="62">AGENTCORE RUNTIME · costagent</text>
+  <text class="m" x="240" y="78">direct_code_deploy · PYTHON_3_12 · Memory 關閉</text>
+
+  <rect class="bxa" x="245" y="100" width="305" height="150"/>
+  <text class="t" x="260" y="126">Strands Agent（每次請求新建）</text>
+  <text class="s" x="260" y="148">system prompt：回憶 → 下鑽 → 沙盒計算 → 只報事實 → 寫回</text>
+  <text class="m" x="260" y="172">VerifiedOpenAIModel</text>
+  <text class="s" x="260" y="190">檢查 Kimi 回傳的 model 是否為 k3.1-pro</text>
+  <text class="m" x="260" y="214">SigV4HttpxAuth</text>
+  <text class="s" x="260" y="232">每次簽名重新取得角色臨時憑證</text>
+
+  <rect class="bx" x="245" y="275" width="305" height="80"/>
+  <text class="t" x="260" y="301">KimiSafeS3SessionManager</text>
+  <text class="s" x="260" y="322">短期記憶：按 session_id 存取對話歷史</text>
+  <text class="s" x="260" y="340">存入與重放時去掉 reasoningContent</text>
+
+  <rect class="bx" x="245" y="380" width="305" height="70"/>
+  <text class="t" x="260" y="406">runtime_entry.py</text>
+  <text class="s" x="260" y="427">@app.entrypoint：讀 payload.prompt / session_id</text>
+
+  <text class="m" x="245" y="478">執行角色 CostAgentRuntimeRole</text>
+  <text class="m" x="245" y="496">環境變數：GATEWAY_URL、LLM_MODEL、LLM_BASE_URL、</text>
+  <text class="m" x="245" y="510">LLM_REASONING_EFFORT、secret 名稱（不含 Key 本身）</text>
+
+  <!-- right side external -->
+  <rect class="bx" x="630" y="30" width="170" height="66"/>
+  <text class="t" x="644" y="56">Kimi API</text>
+  <text class="m" x="644" y="78">api.kimi.com/coding/v1</text>
+
+  <rect class="bx" x="820" y="30" width="160" height="66"/>
+  <text class="t" x="834" y="56">Secrets Manager</text>
+  <text class="m" x="834" y="78">cost-agent/llm-api-key</text>
+
+  <rect class="bx" x="630" y="130" width="170" height="66"/>
+  <text class="t" x="644" y="156">Code Interpreter</text>
+  <text class="m" x="644" y="178">aws.codeinterpreter.v1</text>
+
+  <rect class="bxa" x="630" y="232" width="170" height="86"/>
+  <text class="t" x="644" y="258">AgentCore Gateway</text>
+  <text class="s" x="644" y="278">MCP Server · 入站 AWS_IAM</text>
+  <text class="m" x="644" y="298">target &lt;TARGET_ID&gt;</text>
+
+  <rect class="bxa" x="820" y="232" width="160" height="86"/>
+  <text class="t" x="834" y="258">Lambda</text>
+  <text class="m" x="834" y="278">cost-agent-tools</text>
+  <text class="s" x="834" y="298">Top-N 裁剪 · 參數校驗</text>
+
+  <rect class="bxa" x="820" y="360" width="160" height="62"/>
+  <text class="t" x="834" y="385">Cost Explorer</text>
+  <text class="m" x="834" y="405">ce.cn-northwest-1</text>
+
+  <rect class="bx" x="820" y="440" width="160" height="54"/>
+  <text class="t" x="834" y="463">Pricing API</text>
+  <text class="m" x="834" y="481">api.pricing.cn-northwest-1</text>
+
+  <rect class="bx" x="630" y="360" width="170" height="80"/>
+  <text class="t" x="644" y="385">DynamoDB</text>
+  <text class="m" x="644" y="405">cost-agent-ce-cache</text>
+  <text class="m" x="644" y="422">cost-agent-knowledge</text>
+
+  <rect class="bx" x="630" y="462" width="170" height="58"/>
+  <text class="t" x="644" y="486">S3</text>
+  <text class="m" x="644" y="505">cost-agent-mem-…/sessions/</text>
+
+  <rect class="bx" x="225" y="560" width="755" height="62"/>
+  <text class="t" x="240" y="586">CloudWatch Logs（Observability）</text>
+  <text class="m" x="240" y="606">/aws/bedrock-agentcore/runtimes/costagent-&lt;RUNTIME_SUFFIX&gt;-DEFAULT · /aws/lambda/cost-agent-tools</text>
+
+  <!-- arrows -->
+  <path class="la" d="M180,278 L245,190" marker-end="url(#aa)"/>
+  <text class="lba" x="150" y="214">InvokeAgentRuntime</text>
+  <text class="lb" x="150" y="228">SigV4 + session_id</text>
+
+  <path class="ln" d="M550,120 L630,70" marker-end="url(#ah)"/>
+  <text class="lb" x="560" y="92">chat.completions</text>
+
+  <path class="ln" d="M570,48 C680,8 760,8 820,50" marker-end="url(#ah)"/>
+  <text class="lb" x="690" y="18">啟動時讀 Key</text>
+
+  <path class="ln" d="M550,170 L630,165" marker-end="url(#ah)"/>
+  <text class="lb" x="565" y="160">run_python</text>
+
+  <path class="la" d="M550,225 L630,268" marker-end="url(#aa)"/>
+  <text class="lba" x="560" y="270">MCP tools/call</text>
+
+  <path class="la" d="M800,275 L820,275" marker-end="url(#aa)"/>
+  <text class="lba" x="790" y="226">Invoke</text>
+
+  <path class="la" d="M900,318 L900,360" marker-end="url(#aa)"/>
+  <text class="lba" x="908" y="344">CE API</text>
+
+  <path class="ln" d="M960,318 C1000,360 1000,420 980,455" marker-end="url(#ah)"/>
+
+  <path class="ln" d="M840,318 L780,360" marker-end="url(#ah)"/>
+  <text class="lb" x="760" y="345">快取 / 知識</text>
+
+  <path class="ln" d="M550,320 C600,330 600,470 630,488" marker-end="url(#ah)"/>
+  <text class="lb" x="575" y="455">對話歷史</text>
+
+  <path class="ln" d="M400,520 L400,560" marker-end="url(#ah)"/>
+  <path class="ln" d="M900,494 L900,560" marker-end="url(#ah)"/>
+  <text class="lb" x="408" y="545">結構化日誌</text>
+</svg>
+    </div>
+    <p class="src">資料來源：專案 C:\code\agentcode-ce 的程式碼與 Kiro 的部署驗證紀錄（2026-11-20）。</p>
+  </section>
+
+  <section id="agentcore">
+    <h2><span class="n">02 · 用了 AgentCore 哪些部分</span>六項能力用了五項，Memory 在中國區不提供，改為自建</h2>
+    <p class="sub">中國區 AgentCore 獨立於 Bedrock 運行，能力只有 Runtime、Gateway、Identity、Code Interpreter、Browser、Observability 六項。下表列出每項在本系統中的用法，以及中國區需要特別處理的地方。</p>
+    <div class="tbl"><table>
+      <thead><tr><th style="width:150px">能力</th><th style="width:80px">狀態</th><th>在本系統的作用</th><th>中國區要注意的地方</th></tr></thead>
+      <tbody>
+        <tr><td><b>Runtime</b></td><td><span class="tag on">使用</span></td><td>托管 Agent 程式，提供 HTTPS 調用入口和 session 隔離。按 session_id 路由，每次請求新建一個 Agent 實例，不同使用者的對話不會串在一起。</td><td>starter-toolkit 把端點寫死成 <code>.amazonaws.com</code>，部署前要導出 <code>BEDROCK_AGENTCORE_CP/DP_ENDPOINT</code> 改成 <code>.amazonaws.com.cn</code>。免 Docker 部署要加 <code>-dt direct_code_deploy</code>。Windows 上沒有 zip 指令，用 <code>scripts/zip.cmd</code> 通過檢查。</td></tr>
+        <tr><td><b>Gateway</b></td><td><span class="tag on">使用</span></td><td>托管的 MCP Server。把 Lambda 登記成 target 後，自動暴露 9 個工具。Agent 不需要知道 Lambda 在哪裡。</td><td>北京區沒有 Cognito，入站認證改用 <code>AWS_IAM</code>（SigV4，service 名為 <code>bedrock-agentcore</code>）。工具名會被加上 <code>CostAgentTools___</code> 前綴。inline schema 只接受 type、properties、required、items、description 這幾個欄位。</td></tr>
+        <tr><td><b>Identity</b></td><td><span class="tag part">部分</span></td><td>只用到入站的 IAM 身份：Runtime 執行角色以 SigV4 調用 Gateway；Gateway 用 <code>GATEWAY_IAM_ROLE</code> 調用 Lambda。</td><td>沒有用 CUSTOM_JWT（需要自建 OIDC），也沒有用 Token Vault。目前的下游只有 AWS API，不需要外部 OAuth 憑證。</td></tr>
+        <tr><td><b>Code Interpreter</b></td><td><span class="tag on">使用</span></td><td><code>run_python</code> 工具。環比、日均、佔比、排序這些計算都在托管沙盒裡跑，不讓模型心算。</td><td>回傳的是事件流，stdout 在 <code>structuredContent.stdout</code>。沙盒裡的檔案路徑必須是相對路徑。每次調用會開一個 session，用完就關。</td></tr>
+        <tr><td><b>Observability</b></td><td><span class="tag part">部分</span></td><td>Runtime 和 Lambda 都寫結構化 JSON 日誌（tool、duration_ms、ok、returned_model），用 Logs Insights 統計。</td><td><code>direct_code_deploy</code> 的 Runtime 不會產生 span。X-Ray / Transaction Search 因為 partition 問題（資源策略寫成 <code>arn:aws:</code>）沒有開。</td></tr>
+        <tr><td><b>Browser</b></td><td><span class="tag off">未使用</span></td><td>目前不需要。之後可以拿來讀中國區的價格頁或文件。</td><td>系統瀏覽器 <code>aws.browser.v1</code> 可以用。</td></tr>
+        <tr><td><b>Memory</b></td><td><span class="tag off">不提供</span></td><td>改用 S3 Session Manager 和 DynamoDB 自建，見下一節。</td><td>部署時要加 <code>-dm</code>（memory.mode = NO_MEMORY）。</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="memory">
+    <h2><span class="n">03 · Memory 替代方案</span>用三層自建存儲，補上 Memory 原本負責的短期記憶、長期記憶，再加一層查詢快取</h2>
+    <div class="tbl"><table>
+      <thead><tr><th style="width:120px">層</th><th style="width:210px">實作</th><th>存什麼</th><th>怎麼生效</th></tr></thead>
+      <tbody>
+        <tr><td><b>短期記憶</b></td><td>Strands S3SessionManager 的子類 <code>KimiSafeS3SessionManager</code><br><code>s3://cost-agent-mem-&lt;ACCOUNT_ID&gt;-cn-north-1/sessions/</code></td><td>同一個 session 的完整對話，包括工具調用和工具結果</td><td>同一個 <code>runtimeSessionId</code> 的下一輪會自動載入歷史，所以可以問「剛才第一名的服務再拆開」。存入時會去掉 Kimi 的 reasoningContent，避免多輪對話時出錯。</td></tr>
+        <tr><td><b>長期記憶</b></td><td>DynamoDB <code>cost-agent-knowledge</code><br>PK=scope，SK=ts</td><td>帳號基線、分析結論、使用者偏好。每筆有 <code>confirmed</code> 欄位，區分「已確認」和「待確認」</td><td>每次分析開始時先調用 <code>recall_context</code>，結束時調用 <code>save_finding</code>。開新的 session 也能讀到上次的結論。</td></tr>
+        <tr><td><b>查詢快取</b></td><td>DynamoDB <code>cost-agent-ce-cache</code><br>key = 請求參數的 SHA-256，TTL 6 小時</td><td>Cost Explorer 的回應（已經裁剪成 Top-N）</td><td>CE API 每次請求都收費。完全相同的查詢在 6 小時內直接回傳快取，回應裡會帶 <code>cache_hit=true</code>。</td></tr>
+      </tbody>
+    </table></div>
+    <div class="rule"><b>與 AgentCore Memory 的差異：</b>AgentCore Memory 會自動從對話中抽取長期記憶。這裡改成由 Agent 依照 system prompt 自己調用 <code>save_finding</code>，所以要記什麼、怎麼分類，是由提示詞和工具的參數設計決定的。好處是內容可控、可以查核；代價是 Agent 漏了調用，那筆就不會記下來。</div>
+  </section>
+
+  <section id="flow">
+    <h2><span class="n">04 · 一次請求怎麼跑</span>以「上個月成本 Top 5 服務及環比」為例，從前端到回答一共九步</h2>
+    <div class="two">
+      <ol class="steps">
+        <li><b>前端調用 Runtime。</b>Streamlit 用本機 <code>default</code> profile 的憑證做 SigV4 簽名，呼叫 <code>InvokeAgentRuntime</code>，帶上 prompt 和長度至少 33 字元的 session_id。</li>
+        <li><b>Runtime 建立 Agent。</b>入口函數用 Secrets Manager 讀到的 Key 建立 Kimi 模型，用 session_id 載入 S3 裡的歷史，再從 Gateway 載入 MCP 工具清單，加上 <code>run_python</code>。</li>
+        <li><b>回憶。</b>模型先調用 <code>recall_context</code>，從 DynamoDB 讀出這個帳號的基線和之前的結論。</li>
+        <li><b>查數據。</b>模型調用 <code>get_cost</code>，查上個月和前一個月、按 SERVICE 分組的成本。請求經過 Gateway（SigV4 驗證）→ Lambda → 快取沒命中 → 呼叫 <code>GetCostAndUsage</code>。</li>
+        <li><b>裁剪。</b>Lambda 只回 Top-N、「其他」合計和總額，預設排除 Credit 和 Refund，並用 LINKED_ACCOUNT 限定只算本帳號。</li>
+      </ol>
+      <ol class="steps" start="6" style="counter-reset:s 5">
+        <li><b>計算。</b>模型把數字交給 <code>run_python</code>，在 Code Interpreter 裡算日均和環比。兩個月天數不同，一律先換算成日均再比較。</li>
+        <li><b>撰寫。</b>模型只列出事實變化：總額、日均、各服務的增減。如果提到可能的原因，會標成「待確認」。</li>
+        <li><b>寫回。</b>調用 <code>save_finding</code>，把本次結論存進 DynamoDB，標記為未確認。</li>
+        <li><b>回傳。</b>Runtime 把回答、各工具調用次數、實際使用的 model ID 一起回傳。整段對話寫進 S3，每一步都有日誌寫入 CloudWatch。</li>
+      </ol>
+    </div>
+    <h3>實測結果（reasoning_effort = high）</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>提問</th><th class="num">耗時</th><th>調用的工具</th><th>關鍵數字</th></tr></thead>
+      <tbody>
+        <tr><td>上個月成本 Top 5 服務及環比</td><td class="num">111.0 s</td><td>recall_context ×1、get_cost ×2、run_python ×1、save_finding ×1</td><td>10 月總額 CNY 5,889.38；日均 189.98 → 環比 −1.92%；第一名 EC2 Compute CNY 1,715.12</td></tr>
+        <tr><td>剛才第一名的服務再按 USAGE_TYPE 拆</td><td class="num">105.6 s</td><td>recall_context ×1、get_cost ×4、run_python ×1、save_finding ×1</td><td>CNW1-BoxUsage:m8i-flex.xlarge CNY 1,056.27，日均 +0.16%</td></tr>
+        <tr><td>延續剛才的拆分，只說第一名（CLI）</td><td class="num">28.2 s</td><td>recall_context ×1、save_finding ×1</td><td>沒有重新查 CE，直接用 S3 裡的對話歷史回答</td></tr>
+      </tbody>
+    </table></div>
+    <p class="src">資料來源：Kiro 在 Runtime v2 上的 P3 最終驗證（session p3-final-sdk-20261120-…）。</p>
+  </section>
+
+  <section id="tools">
+    <h2><span class="n">05 · 工具與數據來源</span>成本數據直接來自本帳號的 Cost Explorer API，沒有經過任何中間平台</h2>
+    <p class="sub">Lambda 用 <code>boto3.client("ce", region_name="cn-northwest-1", endpoint_url="https://ce.cn-northwest-1.amazonaws.com.cn")</code> 建立 client，身份是 Lambda 執行角色 <code>CostAgentToolsLambdaRole</code>（權限為 ce:Get*、ce:Describe*、ce:List*），沒有 AssumeRole。程式裡沒有用到本機的 MCP 服務、CMC 控制台或 ce-proxy。</p>
+    <div class="tbl"><table>
+      <thead><tr><th>MCP 工具（去掉前綴）</th><th>呼叫的 API</th><th>用途</th><th>驗證狀態</th></tr></thead>
+      <tbody>
+        <tr><td><code>get_cost</code></td><td>GetCostAndUsage</td><td>按時間、粒度、維度（SERVICE / USAGE_TYPE / REGION / LINKED_ACCOUNT / TAG）查成本，回傳 Top-N 加「其他」</td><td><span class="tag on">已測</span></td></tr>
+        <tr><td><code>compare_periods</code></td><td>GetCostAndUsage ×2</td><td>兩段期間按日均比較，列出變化最大的項目</td><td><span class="tag on">已測</span></td></tr>
+        <tr><td><code>get_forecast</code></td><td>GetCostForecast</td><td>成本預測（UNBLENDED_COST）</td><td><span class="tag off">未實際調用</span></td></tr>
+        <tr><td><code>get_ri_sp_coverage_utilization</code></td><td>GetReservationCoverage / Utilization、GetSavingsPlansCoverage / Utilization</td><td>RI 和 SP 的覆蓋率與使用率</td><td><span class="tag off">未實際調用</span></td></tr>
+        <tr><td><code>get_anomalies</code></td><td>GetAnomalies</td><td>成本異常</td><td><span class="tag off">未實際調用</span></td></tr>
+        <tr><td><code>get_dimension_values</code></td><td>GetDimensionValues</td><td>列出可用的維度值，避免模型自己編造 UsageType</td><td><span class="tag off">未實際調用</span></td></tr>
+        <tr><td><code>get_price</code></td><td>Pricing GetProducts（CNY）</td><td>查單價，用來估算優化建議能省多少</td><td><span class="tag off">未實際調用</span></td></tr>
+        <tr><td><code>recall_context</code></td><td>DynamoDB Query</td><td>讀取長期記憶</td><td><span class="tag on">已測</span></td></tr>
+        <tr><td><code>save_finding</code></td><td>DynamoDB PutItem</td><td>寫入結論，標記是否已確認</td><td><span class="tag on">已測</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note"><b>口徑提醒：</b>這裡的數字是本帳號自己看到的 <code>UnblendedCost</code>，並排除了 Credit 和 Refund。和內部 CMC、Watson 或 Blended / Amortized 口徑的報表對比時，數字可能不一樣。CE 只保留 13 個月的歷史，當月數據約有 24 小時延遲。</div>
+  </section>
+
+  <section id="rules">
+    <h2><span class="n">06 · 分析規則</span>System prompt 規定 Agent 只報告數字變化，不從時間或金額的相關性推論原因</h2>
+    <div class="two">
+      <ul class="plain">
+        <li><b>先回憶：</b>每次分析開始都先調用 <code>recall_context</code>。</li>
+        <li><b>逐層下鑽：</b>總額 → 服務 → UsageType → Region → Tag。</li>
+        <li><b>公平比較：</b>先換算成日均再比較，並標註當月數據還不完整。</li>
+        <li><b>不心算：</b>所有算式都交給 <code>run_python</code>。</li>
+      </ul>
+      <ul class="plain">
+        <li><b>只講事實：</b>寫明哪個 UsageType、在哪段時間、變了多少。</li>
+        <li><b>假設要標註：</b>任何推論出來的原因都標成「待確認」，由客戶確認。</li>
+        <li><b>優化建議：</b>RI / SP 覆蓋缺口、規格調整、Graviton 等，用 <code>get_price</code> 估算可節省的金額。</li>
+        <li><b>寫回：</b>最後調用 <code>save_finding</code>。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="usage">
+    <h2><span class="n">07 · 使用方式</span>日常用前端；要自動化時用 CLI 或 boto3，三種方式都呼叫同一個 Runtime</h2>
+
+    <h3>方式一：本機前端（推薦）</h3>
+<pre><span class="c"># PowerShell</span>
+Set-Location C:\code\agentcode-ce
+.\scripts\run-frontend.ps1
+<span class="c"># 瀏覽器打開 http://127.0.0.1:8501</span></pre>
+    <ul class="plain">
+      <li>前端只在本機開放，用你的 <code>default</code> profile 呼叫 Runtime，程式裡沒有任何 Key。</li>
+      <li>有 5 個快捷問題：上月 Top 5 服務及環比、本月至今成本與預測、RI·SP 覆蓋率與使用率、最近 30 天成本異常、指定服務按 USAGE_TYPE 拆分。</li>
+      <li>可以另外選日期範圍和 group_by，選了會自動加進提問。按「新 session」就開一段全新的對話；留在同一個 session 則可以接著追問。</li>
+      <li>每輪會顯示耗時、各工具調用次數和實際使用的 model ID。read_timeout 設為 600 秒。</li>
+    </ul>
+
+    <h3>方式二：AgentCore CLI</h3>
+<pre>.\.venv\Scripts\Activate.ps1
+$env:BEDROCK_AGENTCORE_CP_ENDPOINT="https://bedrock-agentcore-control.cn-north-1.amazonaws.com.cn"
+$env:BEDROCK_AGENTCORE_DP_ENDPOINT="https://bedrock-agentcore.cn-north-1.amazonaws.com.cn"
+agentcore status -a costagent
+agentcore invoke '{"prompt":"上個月成本 Top 5 服務及環比"}' -a costagent --session-id &lt;至少33字元的ID&gt;</pre>
+
+    <h3>方式三：boto3（給排程或其他系統整合）</h3>
+<pre>import boto3, json, uuid
+from botocore.config import Config
+c = boto3.Session(profile_name="default").client(
+    "bedrock-agentcore", region_name="cn-north-1",
+    endpoint_url="https://bedrock-agentcore.cn-north-1.amazonaws.com.cn",
+    config=Config(read_timeout=600))
+r = c.invoke_agent_runtime(
+    agentRuntimeArn="arn:aws-cn:bedrock-agentcore:cn-north-1:&lt;ACCOUNT_ID&gt;:runtime/costagent-&lt;RUNTIME_SUFFIX&gt;",
+    runtimeSessionId="ops-" + uuid.uuid4().hex,          <span class="c"># ≥ 33 字元，同一 ID 可接著追問</span>
+    payload=json.dumps({"prompt": "最近 30 天成本異常"}).encode())
+body = b"".join(r["response"])                          <span class="c"># 先把所有 bytes 接起來再解碼，避免中文被切斷</span>
+print(json.loads(body.decode("utf-8")))</pre>
+
+    <h3>調整模型</h3>
+    <p>模型設定都是環境變數：<code>LLM_MODEL</code>、<code>LLM_BASE_URL</code>、<code>LLM_REASONING_EFFORT</code>（只接受 low / high / max）。Key 放在 Secrets Manager 的 <code>cost-agent/llm-api-key</code>。改完要重新執行 <code>agentcore deploy</code>（步驟見 README），然後<b>換一個新的 session_id</b>，因為換模型或換推理強度後，舊對話的快取就失效了。</p>
+  </section>
+
+  <section id="ops">
+    <h2><span class="n">08 · 運維、費用與已知問題</span>目前 Runtime v3 用的 low 推理強度在帶工具的對話中會遇到 Kimi 500 錯誤，建議先改回 high</h2>
+    <div class="note"><b>已知問題：</b>Runtime v3 設定為 <code>LLM_REASONING_EFFORT=low</code>。測試時，只要請求帶了工具，Kimi 就經常回 <code>HTTP 500 server_error</code>：預測、RI/SP、異常這 3 個快捷問題都在第一個請求就失敗。中間查到的數字和 high 模式完全一致，但沒有完成最終回答。目前還不能確定是 low 參數造成的，還是 Kimi 當時服務不穩定，需要用 high 對照測試才能下結論。在那之前，建議 Runtime 先改回 <code>high</code>。</div>
+    <div class="two">
+      <div>
+        <h3>持續產生費用的資源</h3>
+        <ul class="plain">
+          <li>AgentCore Runtime 和 Gateway：只要存在就會計費</li>
+          <li>Cost Explorer API：每次請求都收費（有 6 小時快取可以減少次數）</li>
+          <li>Code Interpreter：按 session 計費</li>
+          <li>DynamoDB、S3、CloudWatch Logs：按用量計費</li>
+          <li>Kimi：按你的 Kimi Code 方案額度扣用</li>
+        </ul>
+        <p class="src">實際價格請以 AWS 中國區官網定價頁和帳單為準。</p>
+      </div>
+      <div>
+        <h3>中國區踩過的坑</h3>
+        <ul class="plain">
+          <li>k3.1-pro 的 temperature 只接受 1，而且不能關閉 thinking</li>
+          <li>開啟 thinking 時不能強制指定 <code>tool_choice</code>，會回 400</li>
+          <li>max_tokens 需要 8192，否則推理還沒完成就會被截斷</li>
+          <li>Gateway schema 不接受 enum、default、minimum、maximum，參數範圍改在 Lambda 裡校驗</li>
+          <li>從預設 PyPI 下載太慢，改用清華鏡像（<code>-i https://pypi.tuna.tsinghua.edu.cn/simple</code>）</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>資源清單與清理</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>類別</th><th>資源</th></tr></thead>
+      <tbody>
+        <tr><td>AgentCore</td><td><code>runtime/costagent-&lt;RUNTIME_SUFFIX&gt;</code>、<code>gateway/&lt;GATEWAY_ID&gt;</code>（target &lt;TARGET_ID&gt;）</td></tr>
+        <tr><td>運算</td><td>Lambda <code>cost-agent-tools</code></td></tr>
+        <tr><td>存儲</td><td>DynamoDB <code>cost-agent-ce-cache</code>、<code>cost-agent-knowledge</code>；S3 <code>cost-agent-mem-&lt;ACCOUNT_ID&gt;-cn-north-1</code>、<code>cost-agent-deploy-&lt;ACCOUNT_ID&gt;-cn-north-1</code></td></tr>
+        <tr><td>IAM</td><td><code>CostAgentRuntimeRole</code>、<code>CostAgentGatewayRole</code>、<code>CostAgentToolsLambdaRole</code></td></tr>
+        <tr><td>密鑰</td><td>Secrets Manager <code>cost-agent/llm-api-key</code>（清理時預設保留）</td></tr>
+      </tbody>
+    </table></div>
+<pre>.\.venv\Scripts\python.exe .\cleanup.py --dry-run                     <span class="c"># 只列出會刪除的資源</span>
+.\.venv\Scripts\python.exe .\cleanup.py --confirm DELETE              <span class="c"># 刪除全部資源，保留 secret</span>
+.\.venv\Scripts\python.exe .\cleanup.py --confirm DELETE --delete-secret</pre>
+  </section>
+
+  <footer>
+    依據 AgentCore 中國區 Workshop（bedrock-agentcore 1.24.1 / starter-toolkit 0.3.14 / strands-agents 1.59.0）搭建，並由 Kiro 在 2026-11-20 實機驗證 P0–P3。內容反映截至該日的狀態。
+  </footer>
+</main>
+<script>document.querySelector('main').classList.add('fade');</script>
+</body>
+</html>

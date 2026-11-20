@@ -1,0 +1,22 @@
+{
+  "region": "cn-north-1",
+  "account_id": "<ACCOUNT_ID>",
+  "cache_table": "cost-agent-ce-cache",
+  "cache_table_arn": "arn:aws-cn:dynamodb:cn-north-1:<ACCOUNT_ID>:table/cost-agent-ce-cache",
+  "knowledge_table": "cost-agent-knowledge",
+  "knowledge_table_arn": "arn:aws-cn:dynamodb:cn-north-1:<ACCOUNT_ID>:table/cost-agent-knowledge",
+  "lambda_name": "cost-agent-tools",
+  "lambda_arn": "arn:aws-cn:lambda:cn-north-1:<ACCOUNT_ID>:function:cost-agent-tools",
+  "lambda_role_name": "CostAgentToolsLambdaRole",
+  "gateway_name": "CostAgentGateway",
+  "gateway_id": "<GATEWAY_ID>",
+  "gateway_arn": "arn:aws-cn:bedrock-agentcore:cn-north-1:<ACCOUNT_ID>:gateway/<GATEWAY_ID>",
+  "gateway_url": "<GATEWAY_URL>",
+  "target_name": "CostAgentTools",
+  "target_id": "<TARGET_ID>",
+  "session_bucket": "cost-agent-mem-<ACCOUNT_ID>-cn-north-1",
+  "runtime_name": "costagent",
+  "runtime_id": "costagent-<RUNTIME_SUFFIX>",
+  "runtime_arn": "arn:aws-cn:bedrock-agentcore:cn-north-1:<ACCOUNT_ID>:runtime/costagent-<RUNTIME_SUFFIX>",
+  "runtime_log_group": "/aws/bedrock-agentcore/runtimes/costagent-<RUNTIME_SUFFIX>-DEFAULT"
+}

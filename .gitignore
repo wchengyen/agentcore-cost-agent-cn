@@ -1,0 +1,40 @@
+# Secrets and local environment
+.env
+.env.*
+.streamlit/
+**/.streamlit/secrets.toml
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# AgentCore local/deployment state with live ARNs and URLs
+.bedrock_agentcore.yaml
+.bedrock_agentcore/
+.agentcore/
+resource_config.json
+gateway_config.json
+runtime_config.json
+deploy_output*.json
+runtime_output*.json
+*_deploy_output.json
+*_runtime_output.json
+
+# Logs and test output
+*.log
+logs/
+test-output/
+test-outputs/
+test_output/
+test_outputs/
+*.out
+
+# Build artifacts
+build/
+dist/
+*.zip
+*.egg-info/
