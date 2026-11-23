@@ -160,7 +160,7 @@ Runtime invocation is tested through both `agentcore invoke --session-id` and `i
 ### Verified P3 deployment
 
 - Runtime ARN: `arn:aws-cn:bedrock-agentcore:cn-north-1:<ACCOUNT_ID>:runtime/costagent-<RUNTIME_SUFFIX>`
-- Runtime version: `8`, status: `READY`
+- Runtime version: `9`, status: `READY`
 - Runtime model: `glm-5.3-flash`; returned model ID verified as `glm-5.3-flash`
 - Selected reasoning variant: `LLM_REASONING_EFFORT=low` (unset remains supported and uses GLM default max)
 - Execution role: `arn:aws-cn:iam::<ACCOUNT_ID>:role/CostAgentRuntimeRole`
@@ -207,15 +207,15 @@ All tests used fresh GUID session IDs and returned `glm-5.3-flash`. The fixed po
 
 Ground truth matched in every variant: October total CNY 5,889.38, daily-average MoM −1.92%, EC2 Compute CNY 1,715.12, and `CNW1-BoxUsage:m8i-flex.xlarge` CNY 1,056.27 at +0.16%.
 
-Low was selected because it was correct and compliant, then fastest. Runtime v8 adds an explicit requirement to validate date-window arithmetic with `run_python` and remains deployed with `LLM_REASONING_EFFORT=low`.
+Low was selected because it was correct and compliant, then fastest. Runtime v9 contains the explicit requirement to validate date-window arithmetic with `run_python` and remains deployed with `LLM_REASONING_EFFORT=low`. A final fresh-session T1 sanity check on v9 took 49.319s and called recall ×1, compare ×1, get_cost ×2, run_python ×2, and save ×1; all ground-truth values matched.
 
 | Low quick prompt | Latency | Tool calls | Result |
 |---|---:|---|---|
 | Month-to-date and forecast | 37.520s | recall, get_forecast ×1, get_cost ×2, run_python, save | completed; forecast needed no invalid retry |
 | RI/SP coverage and utilization | 25.428s | recall, RI/SP ×1, run_python, save | RI values returned; unavailable SP utilization returned as structured `unavailable` |
-| Last 30 days anomalies, final v8 | 25.390s | recall, run_python, get_anomalies, save | zero anomalies; date window verified with Python |
+| Last 30 days anomalies, final v9 | 63.735s | recall ×1, run_python ×2, get_anomalies ×1, get_cost ×1, save ×1 | zero anomalies; date window verified with Python; rolling-window total also queried live |
 
-The first v7 anomaly check took 20.313s but omitted `run_python`; v8 fixed and retested it. The forecast tool now clamps past starts to current UTC date and returns `start_adjusted`, `end_adjusted`, and `start_adjusted_note`. Live verification adjusted 2026-11-01 to 2026-11-23. RI/SP now returns `partial_unavailable` with `sp_utilization.status=unavailable` instead of raising `DataUnavailableException`.
+The first v7 anomaly check took 20.313s but omitted `run_python`; v8 fixed and retested it, and the final v9 verification expanded the analysis with one live `get_cost` call. The forecast tool now clamps past starts to current UTC date and returns `start_adjusted`, `end_adjusted`, and `start_adjusted_note`. Live verification adjusted 2026-11-01 to 2026-11-23. RI/SP now returns `partial_unavailable` with `sp_utilization.status=unavailable` instead of raising `DataUnavailableException`.
 
 Quality findings: the fixed prompt prevented stale answers despite earlier `save_finding` records. Current-turn T1/T2 cost tools were used in all variants; arithmetic used `run_python`; no invented dimension or EC2-Other composition was observed; hypotheses remained in `待確認`; recall/save were present. The max variant's reversed comparison arguments were the only benchmark tool-parameter issue and were corrected before reporting.
 

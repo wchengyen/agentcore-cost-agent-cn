@@ -78,7 +78,7 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
       <p>中國區的 AgentCore 沒有 Memory，也不能用 Bedrock 模型，所以有兩處自建：短期記憶用 S3 存對話歷史，長期記憶用 DynamoDB 存結論；模型則改走 OpenAI 兼容的智譜 GLM API。其他部分都用 AgentCore 的托管能力。</p>
     </div>
     <dl class="facts">
-      <div><dt>Runtime</dt><dd>costagent-&lt;RUNTIME_SUFFIX&gt; · v8</dd></div>
+      <div><dt>Runtime</dt><dd>costagent-&lt;RUNTIME_SUFFIX&gt; · v9</dd></div>
       <div><dt>Gateway</dt><dd>&lt;GATEWAY_ID&gt;</dd></div>
       <div><dt>MCP 工具數</dt><dd>9</dd></div>
       <div><dt>模型</dt><dd>glm-5.3-flash（智譜 Coding Plan）</dd></div>
@@ -304,10 +304,10 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
       <tbody>
         <tr><td>本月至今與預測</td><td class="num">37.520 s</td><td>forecast ×1、cost ×2、Python；過去 start 自動調整，無無效重試</td></tr>
         <tr><td>RI / SP</td><td class="num">25.428 s</td><td>RI/SP ×1、Python；SP utilization 以 unavailable 回傳，不再拋錯</td></tr>
-        <tr><td>最近 30 天異常（最終 v8）</td><td class="num">25.390 s</td><td>Python 驗證日期、anomalies ×1；0 個工具證實異常</td></tr>
+        <tr><td>最近 30 天異常（最終 v9）</td><td class="num">63.735 s</td><td>Python ×2、anomalies ×1、cost ×1；0 個工具證實異常，並查詢滾動窗口總額</td></tr>
       </tbody>
     </table></div>
-    <p class="src">Runtime v8 最終使用 low。修正後，即使 knowledge table 保留舊 finding，T1/T2 仍先做本輪查詢；記憶數字只能標成歷史結論並帶 saved_at。Kimi high 基線為 111.0 / 105.6 秒，修正前 GLM max 為 176.4 / 62.8 秒。</p>
+    <p class="src">Runtime v9 最終使用 low。修正後，即使 knowledge table 保留舊 finding，T1/T2 仍先做本輪查詢；記憶數字只能標成歷史結論並帶 saved_at。最終 v9 T1 sanity 為 49.319 秒，ground truth 全部相符。Kimi high 基線為 111.0 / 105.6 秒，修正前 GLM max 為 176.4 / 62.8 秒。</p>
   </section>
 
   <section id="tools">
@@ -390,8 +390,8 @@ print(json.loads(body.decode("utf-8")))</pre>
   </section>
 
   <section id="ops">
-    <h2><span class="n">08 · 運維、費用與已知問題</span>目前 Runtime v8 使用智譜 GLM-5.3-Flash low；Kimi low 的 500 保留為歷史回滾注意事項</h2>
-    <div class="note"><b>目前狀態：</b>Runtime v8 已回傳 <code>model=glm-5.3-flash</code>，選定 <code>reasoning_effort=low</code>。官方接受 low / high / max，未設定時預設 max，thinking 不可關閉。修正後 low 的兩輪與快捷問題均完成；Kimi v3 的 low 工具對話曾回 <code>HTTP 500 server_error</code>，回滾腳本因此選擇已驗證的 <code>reasoning_effort=high</code>。</div>
+    <h2><span class="n">08 · 運維、費用與已知問題</span>目前 Runtime v9 使用智譜 GLM-5.3-Flash low；Kimi low 的 500 保留為歷史回滾注意事項</h2>
+    <div class="note"><b>目前狀態：</b>Runtime v9 已回傳 <code>model=glm-5.3-flash</code>，選定 <code>reasoning_effort=low</code>。官方接受 low / high / max，未設定時預設 max，thinking 不可關閉。修正後 low 的兩輪與快捷問題均完成；Kimi v3 的 low 工具對話曾回 <code>HTTP 500 server_error</code>，回滾腳本因此選擇已驗證的 <code>reasoning_effort=high</code>。</div>
     <div class="two">
       <div>
         <h3>持續產生費用的資源</h3>
@@ -434,7 +434,7 @@ print(json.loads(body.decode("utf-8")))</pre>
   </section>
 
   <footer>
-    依據 AgentCore 中國區 Workshop（bedrock-agentcore 1.24.1 / starter-toolkit 0.3.14 / strands-agents 1.59.0）搭建；2026-11-23 已完成智譜 glm-5.3-flash Runtime v8 low 驗證與資料新鮮度修正。內容反映截至該日的狀態。
+    依據 AgentCore 中國區 Workshop（bedrock-agentcore 1.24.1 / starter-toolkit 0.3.14 / strands-agents 1.59.0）搭建；2026-11-23 已完成智譜 glm-5.3-flash Runtime v9 low 驗證與資料新鮮度修正。內容反映截至該日的狀態。
   </footer>
 </main>
 <script>document.querySelector('main').classList.add('fade');</script>
