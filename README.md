@@ -28,7 +28,7 @@ User -> Cost Agent (Strands + OpenAI-compatible model)
                                    `-- cost-agent-knowledge DynamoDB
 ```
 
-The Runtime constructs a new `Agent` for every request. No Agent instance is shared across sessions. AgentCore Memory is disabled because it is unavailable in AWS China. `ReasoningSafeS3SessionManager` removes `reasoningContent`, `reasoning_content`, `reasoning`, and complete `<think>...</think>` traces when writing and replaying session messages, while retaining text and tool-use blocks.
+The Runtime constructs a new `Agent` for every request. No Agent instance is shared across sessions. AgentCore Memory is disabled because it is unavailable in AWS China. `ReasoningSafeS3SessionManager` removes `reasoningContent`, `reasoning_content`, `reasoning`, and complete `<think>...</think>` traces when writing and replaying session messages, while retaining text and tool-use blocks. Long-term findings are background only: except when a user explicitly requests no re-query, current answer numbers must come from current-turn cost tools.
 
 The current provider is Zhipu Coding Plan: `glm-5.3-flash` at `https://open.bigmodel.cn/api/coding/paas/v4`. `LLM_TEMPERATURE` and `LLM_REASONING_EFFORT` are optional; when unset, those fields are not sent. GLM then uses its documented defaults: temperature 1, top_p 0.95, thinking enabled, and reasoning effort max. `LLM_MAX_TOKENS` defaults to 8192, below GLM-5.3-Flash's 128K output limit. `VerifiedOpenAIModel` logs and validates the provider-returned model ID.
 
@@ -160,9 +160,9 @@ Runtime invocation is tested through both `agentcore invoke --session-id` and `i
 ### Verified P3 deployment
 
 - Runtime ARN: `arn:aws-cn:bedrock-agentcore:cn-north-1:<ACCOUNT_ID>:runtime/costagent-<RUNTIME_SUFFIX>`
-- Runtime version: `4`, status: `READY`
+- Runtime version: `8`, status: `READY`
 - Runtime model: `glm-5.3-flash`; returned model ID verified as `glm-5.3-flash`
-- Runtime omits explicit `LLM_TEMPERATURE` and `LLM_REASONING_EFFORT`, using GLM defaults
+- Selected reasoning variant: `LLM_REASONING_EFFORT=low` (unset remains supported and uses GLM default max)
 - Execution role: `arn:aws-cn:iam::<ACCOUNT_ID>:role/CostAgentRuntimeRole`
 - Runtime log group: `/aws/bedrock-agentcore/runtimes/costagent-<RUNTIME_SUFFIX>-DEFAULT`
 - Deployment bucket: `cost-agent-deploy-<ACCOUNT_ID>-cn-north-1`
@@ -195,22 +195,31 @@ openai.InternalServerError: Error code: 500 -
 
 The same error was reproduced through Runtime, the local Gateway agent, a direct typed `reasoning_effort` request, and `extra_body`. That historical Kimi test used the typed SDK parameter; the current GLM configuration omits reasoning effort. The earlier high-effort baseline completed in 111.0 seconds and 105.6 seconds. Low-effort turn 1 failed after 20.393 seconds on its first attempt; a second attempt failed after 35.706 seconds after calling `recall_context`, two `get_cost` calls, `run_python`, and `save_finding`. Its saved finding exactly matched CNY 5,889.38, -1.92%, and EC2 Compute CNY 1,715.12. Low-effort turn 2 in the same session failed after 18.433 seconds after `recall_context` and two `USAGE_TYPE` `get_cost` calls. Those tool results matched `CNW1-BoxUsage:m8i-flex.xlarge` at CNY 1,056.27168; no final model answer or `run_python` percentage was produced. Therefore final-answer quality and the +0.16% presentation cannot be assessed. No cost-analysis tools ran in the failed frontend smoke-test sessions.
 
-## GLM-5.3-Flash benchmark (2026-11-23)
+## GLM-5.3-Flash quality-fix benchmark (2026-11-23)
 
-Runtime version 4 returned model ID `glm-5.3-flash`. Local P0 completed in 60.726s. Runtime used fresh GUID session IDs; no explicit temperature or reasoning effort was sent.
+All tests used fresh GUID session IDs and returned `glm-5.3-flash`. The fixed policy made memory background-only and required current-turn cost tools unless the user explicitly asks not to query again.
 
-| Test | GLM latency | GLM tool calls | Kimi high baseline | Result |
-|---|---:|---|---:|---|
-| Quick model confirmation | 36.023s | recall ×1, save ×1 | n/a | returned `glm-5.3-flash` |
-| Turn 1: previous-month Top 5 | 176.438s | recall ×1, run_python ×1, save ×1 | 111.0s | CNY 5,889.38; -1.92%; EC2 Compute CNY 1,715.12 |
-| Turn 2: first service by USAGE_TYPE | 62.770s | recall ×1, run_python ×1, save ×1 | 105.6s | `CNW1-BoxUsage:m8i-flex.xlarge`, CNY 1,056.27, +0.16% |
-| Month-to-date and forecast | 163.808s | recall ×1, get_cost ×5, get_forecast ×3, run_python ×1, save ×1 | n/a | completed with two rejected past-start forecast attempts |
-| RI/SP coverage and utilization | 93.583s | recall ×1, RI/SP ×3, run_python ×1, save ×1 | n/a | official totals unavailable; `GetSavingsPlansUtilization` returned `DataUnavailableException` |
-| Last 30 days anomalies | 56.347s | recall ×1, get_anomalies ×1, run_python ×2, save ×1 | n/a | zero tool-confirmed anomalies; first Python date expression failed and was corrected |
+| Variant / Runtime | T1 latency and tools | T2 latency and tools | Ground truth / quality |
+|---|---|---|---|
+| Default unset → max, v5 | 173.645s; recall, get_cost ×2, compare, run_python, save | 297.559s; recall, get_cost ×2, run_python, save | numbers matched; T1 reversed compare-period direction, detected the sign mismatch, then corrected it with Python |
+| High, v6 | 114.032s; recall, compare, get_cost ×2, run_python, save | 60.180s; recall, get_cost ×2, run_python, save | numbers matched; live queries used; no unsupported EC2-Other composition |
+| Low, v7 | **54.745s**; recall, compare, get_cost ×2, run_python, save | **33.475s**; recall, get_cost ×2, run_python, save | numbers matched; live queries used; no missing required tools or unsupported causal claims |
 
-Quality findings: both benchmark answers matched the supplied ground truth and used `run_python`; no invented dimension was observed; causal explanations were marked `待確認`; required recall/save calls were present. GLM reused confirmed DynamoDB findings instead of issuing fresh `get_cost` calls in the two benchmark turns. Turn 1 labeled EC2 Other with an explanatory parenthetical not present in that turn's live tool output. The forecast agent sent two invalid past-start requests before succeeding with a valid future-only forecast. Exact CE errors were `ValidationException: Earliest supported Start is 2026-11-23` and `DataUnavailableException` from `GetSavingsPlansUtilization`.
+Ground truth matched in every variant: October total CNY 5,889.38, daily-average MoM −1.92%, EC2 Compute CNY 1,715.12, and `CNW1-BoxUsage:m8i-flex.xlarge` CNY 1,056.27 at +0.16%.
 
-Official GLM documentation: [GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash.md), [thinking modes](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode.md), and [function calling](https://docs.bigmodel.cn/cn/guide/capabilities/function-calling.md). The model supports Function Calling, only `tool_choice=auto`, a 128K maximum output, always-enabled thinking, and streamed `reasoning_content`. Content was rephrased for compliance with licensing restrictions.
+Low was selected because it was correct and compliant, then fastest. Runtime v8 adds an explicit requirement to validate date-window arithmetic with `run_python` and remains deployed with `LLM_REASONING_EFFORT=low`.
+
+| Low quick prompt | Latency | Tool calls | Result |
+|---|---:|---|---|
+| Month-to-date and forecast | 37.520s | recall, get_forecast ×1, get_cost ×2, run_python, save | completed; forecast needed no invalid retry |
+| RI/SP coverage and utilization | 25.428s | recall, RI/SP ×1, run_python, save | RI values returned; unavailable SP utilization returned as structured `unavailable` |
+| Last 30 days anomalies, final v8 | 25.390s | recall, run_python, get_anomalies, save | zero anomalies; date window verified with Python |
+
+The first v7 anomaly check took 20.313s but omitted `run_python`; v8 fixed and retested it. The forecast tool now clamps past starts to current UTC date and returns `start_adjusted`, `end_adjusted`, and `start_adjusted_note`. Live verification adjusted 2026-11-01 to 2026-11-23. RI/SP now returns `partial_unavailable` with `sp_utilization.status=unavailable` instead of raising `DataUnavailableException`.
+
+Quality findings: the fixed prompt prevented stale answers despite earlier `save_finding` records. Current-turn T1/T2 cost tools were used in all variants; arithmetic used `run_python`; no invented dimension or EC2-Other composition was observed; hypotheses remained in `待確認`; recall/save were present. The max variant's reversed comparison arguments were the only benchmark tool-parameter issue and were corrected before reporting.
+
+Official GLM documentation: [GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash.md), [thinking modes](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode.md), and [function calling](https://docs.bigmodel.cn/cn/guide/capabilities/function-calling.md). The model accepts direct `reasoning_effort=low|high|max`, defaults to max, requires thinking enabled, and returns streamed `reasoning_content`. Content was rephrased for compliance with licensing restrictions.
 
 ## Roll back to Kimi
 
@@ -257,12 +266,13 @@ The current GLM forecast, RI/SP, and anomaly smoke-test results are documented i
 
 - `get_cost`: Top-N, Others, total, periods, 6-hour cache marker.
 - `compare_periods`: daily-average normalized period and service deltas.
-- `get_forecast`: account-scoped unblended-cost forecast.
-- `get_ri_sp_coverage_utilization`: RI and Savings Plans totals.
+- `get_forecast`: account-scoped unblended-cost forecast; past starts clamp to current UTC date and return adjustment fields.
+- `get_ri_sp_coverage_utilization`: RI and Savings Plans totals; unavailable components return structured status instead of failing.
 - `get_anomalies`: only anomalies with root causes attributed to the deploying account.
 - `get_dimension_values`: account-scoped CE dimension values.
 - `get_price`: compact CNY on-demand Pricing API results.
-- `recall_context` and `save_finding`: DynamoDB long-term findings.
+- `recall_context`: dated background findings only; current numbers require current-turn cost tools unless the user explicitly forbids re-querying.
+- `save_finding`: DynamoDB long-term findings.
 - `run_python`: AgentCore Code Interpreter; relative file paths only.
 
 Gateway prefixes names as `CostAgentTools___<tool>`. Lambda dispatch deliberately uses `endswith`.

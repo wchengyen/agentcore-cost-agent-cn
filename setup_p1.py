@@ -144,7 +144,7 @@ def tool_schemas() -> list[dict[str, Any]]:
         "end": {"type": "string", "description": "YYYY-MM-DD exclusive"},
     }
     return [
-        {"name": "get_cost", "description": "查询部署账号自身的成本 Top-N、Others 和总额；默认排除 Credit/Refund。",
+        {"name": "get_cost", "description": "本轮查询部署账号自身的成本 Top-N、Others 和总额；回答当前数字前必须调用；默认排除 Credit/Refund。",
          "inputSchema": {"type": "object", "properties": {
              **date_props,
              "granularity": {"type": "string", "description": "MONTHLY or DAILY; default MONTHLY"},
@@ -153,19 +153,19 @@ def tool_schemas() -> list[dict[str, Any]]:
              "top_n": {"type": "integer", "description": "1 through 100; default 10"},
              "metric": {"type": "string", "description": "Cost metric; default UnblendedCost"},
          }, "required": ["start", "end"]}},
-        {"name": "compare_periods", "description": "以每日平均成本比较两个期间并列出主要变动。",
+        {"name": "compare_periods", "description": "本轮以每日平均成本比较两个期间并列出主要变动；回答环比数字前必须调用本工具或本轮 get_cost 后用 run_python。",
          "inputSchema": {"type": "object", "properties": {
              "a_start": {"type": "string"}, "a_end": {"type": "string"},
              "b_start": {"type": "string"}, "b_end": {"type": "string"},
              "group_by": {"type": "string", "description": "Grouping dimension; default SERVICE"},
          }, "required": ["a_start", "a_end", "b_start", "b_end"]}},
-        {"name": "get_forecast", "description": "取得部署账号自身的 Cost Explorer 成本预测。",
+        {"name": "get_forecast", "description": "本轮取得部署账号自身的 Cost Explorer 成本预测；过去的 start 会自动调整至当前 UTC 日期并在响应注明。",
          "inputSchema": {"type": "object", "properties": {**date_props,
              "granularity": {"type": "string", "description": "MONTHLY or DAILY; default MONTHLY"}},
              "required": ["start", "end"]}},
-        {"name": "get_ri_sp_coverage_utilization", "description": "取得 RI 与 Savings Plans 覆盖率及利用率。",
+        {"name": "get_ri_sp_coverage_utilization", "description": "本轮取得 RI 与 Savings Plans 覆盖率及利用率；无适用数据时返回 unavailable 而非工具错误。",
          "inputSchema": {"type": "object", "properties": date_props, "required": ["start", "end"]}},
-        {"name": "get_anomalies", "description": "取得仅归属于部署账号的成本异常。",
+        {"name": "get_anomalies", "description": "本轮取得仅归属于部署账号的成本异常；回答当前异常数字前必须调用。",
          "inputSchema": {"type": "object", "properties": date_props, "required": ["start", "end"]}},
         {"name": "get_dimension_values", "description": "列出部署账号成本维度值。",
          "inputSchema": {"type": "object", "properties": {"dimension": {"type": "string"}, **date_props},
@@ -178,7 +178,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                  "Field": {"type": "string"}, "Value": {"type": "string"}},
                  "required": ["Type", "Field", "Value"]}},
          }, "required": ["service_code", "filters"]}},
-        {"name": "recall_context", "description": "每次分析首先调用，读取该 scope 最近的长期事实和待确认项。",
+        {"name": "recall_context", "description": "每次分析首先调用。结果仅为带 saved_at 的背景参考，不是当前数据；除非用户明确要求不重查，否则所有回答数字仍须来自本轮成本工具。",
          "inputSchema": {"type": "object", "properties": {"scope": {"type": "string"}}, "required": ["scope"]}},
         {"name": "save_finding", "description": "每次分析结束前保存关键事实或待确认假设。",
          "inputSchema": {"type": "object", "properties": {
@@ -232,16 +232,27 @@ def main() -> int:
 
     targets = cp.list_gateway_targets(gatewayIdentifier=gateway_id, maxResults=100).get("items", [])
     target = next((item for item in targets if item.get("name") == TARGET_NAME), None)
+    target_configuration = {"mcp": {"lambda": {
+        "lambdaArn": lambda_arn,
+        "toolSchema": {"inlinePayload": tool_schemas()},
+    }}}
+    credentials = [{"credentialProviderType": "GATEWAY_IAM_ROLE"}]
     if target is None:
         target = cp.create_gateway_target(
             gatewayIdentifier=gateway_id,
             name=TARGET_NAME,
             description="Cost Explorer, Pricing, cache, and knowledge tools",
-            targetConfiguration={"mcp": {"lambda": {
-                "lambdaArn": lambda_arn,
-                "toolSchema": {"inlinePayload": tool_schemas()},
-            }}},
-            credentialProviderConfigurations=[{"credentialProviderType": "GATEWAY_IAM_ROLE"}],
+            targetConfiguration=target_configuration,
+            credentialProviderConfigurations=credentials,
+        )
+    else:
+        target = cp.update_gateway_target(
+            gatewayIdentifier=gateway_id,
+            targetId=target["targetId"],
+            name=TARGET_NAME,
+            description="Cost Explorer, Pricing, cache, and knowledge tools",
+            targetConfiguration=target_configuration,
+            credentialProviderConfigurations=credentials,
         )
     target_id = target["targetId"]
     for _ in range(60):
@@ -274,7 +285,12 @@ def main() -> int:
         "target_name": TARGET_NAME,
         "target_id": target_id,
     }
-    (ROOT / "resource_config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+    config_path = ROOT / "resource_config.json"
+    if config_path.exists():
+        existing_config = json.loads(config_path.read_text(encoding="utf-8"))
+        existing_config.update(config)
+        config = existing_config
+    config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
     print(json.dumps(config, indent=2))
     return 0
 

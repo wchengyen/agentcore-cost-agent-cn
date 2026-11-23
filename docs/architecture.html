@@ -78,7 +78,7 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
       <p>中國區的 AgentCore 沒有 Memory，也不能用 Bedrock 模型，所以有兩處自建：短期記憶用 S3 存對話歷史，長期記憶用 DynamoDB 存結論；模型則改走 OpenAI 兼容的智譜 GLM API。其他部分都用 AgentCore 的托管能力。</p>
     </div>
     <dl class="facts">
-      <div><dt>Runtime</dt><dd>costagent-&lt;RUNTIME_SUFFIX&gt; · v4</dd></div>
+      <div><dt>Runtime</dt><dd>costagent-&lt;RUNTIME_SUFFIX&gt; · v8</dd></div>
       <div><dt>Gateway</dt><dd>&lt;GATEWAY_ID&gt;</dd></div>
       <div><dt>MCP 工具數</dt><dd>9</dd></div>
       <div><dt>模型</dt><dd>glm-5.3-flash（智譜 Coding Plan）</dd></div>
@@ -290,19 +290,24 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
       </tbody>
     </table></div>
     <p class="src">資料來源：Kiro 在 Runtime v2 上的 P3 最終驗證（session p3-final-sdk-20261120-…）。</p>
-    <h3>智譜 GLM-5.3-Flash（Runtime v4，2026-11-23）</h3>
+    <h3>智譜 GLM-5.3-Flash 修正後矩陣（2026-11-23）</h3>
     <div class="tbl"><table>
-      <thead><tr><th>提問</th><th class="num">GLM 耗時</th><th>工具</th><th>結果 / 品質</th></tr></thead>
+      <thead><tr><th>推理強度 / Runtime</th><th class="num">T1</th><th class="num">T2</th><th>即時工具與品質</th></tr></thead>
       <tbody>
-        <tr><td>快速模型確認</td><td class="num">36.0 s</td><td>recall ×1、save ×1</td><td>回傳 model=glm-5.3-flash</td></tr>
-        <tr><td>上月 Top 5</td><td class="num">176.4 s</td><td>recall ×1、run_python ×1、save ×1</td><td>5,889.38、−1.92%、EC2 Compute 1,715.12；引用長期記憶，未重查 get_cost</td></tr>
-        <tr><td>第一名按 USAGE_TYPE 拆分</td><td class="num">62.8 s</td><td>recall ×1、run_python ×1、save ×1</td><td>m8i-flex.xlarge 1,056.27、+0.16%；引用已確認資料</td></tr>
-        <tr><td>本月至今與預測</td><td class="num">163.8 s</td><td>get_cost ×5、get_forecast ×3、run_python ×1</td><td>完成；兩次過去日期 forecast 被 CE 拒絕後改用有效未來日期</td></tr>
-        <tr><td>RI / SP</td><td class="num">93.6 s</td><td>RI/SP ×3、run_python ×1</td><td>GetSavingsPlansUtilization 回 DataUnavailableException，未提供官方比率</td></tr>
-        <tr><td>最近 30 天異常</td><td class="num">56.3 s</td><td>get_anomalies ×1、run_python ×2</td><td>0 個工具證實異常；首次日期算式錯誤後已修正</td></tr>
+        <tr><td>未設定 → max / v5</td><td class="num">173.645 s</td><td class="num">297.559 s</td><td>兩輪均 recall、即時 get_cost、run_python、save；數字正確。T1 比較期間方向傳反，發現符號不一致後用 Python 修正。</td></tr>
+        <tr><td>high / v6</td><td class="num">114.032 s</td><td class="num">60.180 s</td><td>兩輪均使用即時成本工具；數字正確；未描述工具未證實的 EC2-Other 組成。</td></tr>
+        <tr><td><b>low / v7（選定）</b></td><td class="num"><b>54.745 s</b></td><td class="num"><b>33.475 s</b></td><td>兩輪均 recall、即時成本工具、run_python、save；ground truth 全部相符。</td></tr>
       </tbody>
     </table></div>
-    <p class="src">兩輪 ground truth 與 Kimi high 基線一致；GLM Turn 1 較慢 65.4 秒，Turn 2 較快 42.8 秒。所有完成的回答都有 save_finding，原因推論標記待確認。</p>
+    <div class="tbl"><table>
+      <thead><tr><th>low 快捷問題</th><th class="num">耗時</th><th>工具與結果</th></tr></thead>
+      <tbody>
+        <tr><td>本月至今與預測</td><td class="num">37.520 s</td><td>forecast ×1、cost ×2、Python；過去 start 自動調整，無無效重試</td></tr>
+        <tr><td>RI / SP</td><td class="num">25.428 s</td><td>RI/SP ×1、Python；SP utilization 以 unavailable 回傳，不再拋錯</td></tr>
+        <tr><td>最近 30 天異常（最終 v8）</td><td class="num">25.390 s</td><td>Python 驗證日期、anomalies ×1；0 個工具證實異常</td></tr>
+      </tbody>
+    </table></div>
+    <p class="src">Runtime v8 最終使用 low。修正後，即使 knowledge table 保留舊 finding，T1/T2 仍先做本輪查詢；記憶數字只能標成歷史結論並帶 saved_at。Kimi high 基線為 111.0 / 105.6 秒，修正前 GLM max 為 176.4 / 62.8 秒。</p>
   </section>
 
   <section id="tools">
@@ -313,8 +318,8 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
       <tbody>
         <tr><td><code>get_cost</code></td><td>GetCostAndUsage</td><td>按時間、粒度、維度（SERVICE / USAGE_TYPE / REGION / LINKED_ACCOUNT / TAG）查成本，回傳 Top-N 加「其他」</td><td><span class="tag on">已測</span></td></tr>
         <tr><td><code>compare_periods</code></td><td>GetCostAndUsage ×2</td><td>兩段期間按日均比較，列出變化最大的項目</td><td><span class="tag on">已測</span></td></tr>
-        <tr><td><code>get_forecast</code></td><td>GetCostForecast</td><td>成本預測（UNBLENDED_COST）</td><td><span class="tag on">已測</span></td></tr>
-        <tr><td><code>get_ri_sp_coverage_utilization</code></td><td>GetReservationCoverage / Utilization、GetSavingsPlansCoverage / Utilization</td><td>RI 和 SP 的覆蓋率與使用率</td><td><span class="tag part">已調用；SP utilization 資料不可用</span></td></tr>
+        <tr><td><code>get_forecast</code></td><td>GetCostForecast</td><td>成本預測；過去 start 自動調整至 UTC 今天並回傳調整說明</td><td><span class="tag on">已測</span></td></tr>
+        <tr><td><code>get_ri_sp_coverage_utilization</code></td><td>GetReservationCoverage / Utilization、GetSavingsPlansCoverage / Utilization</td><td>RI 和 SP 的覆蓋率與使用率；缺資料回傳 unavailable</td><td><span class="tag part">已調用；SP utilization unavailable</span></td></tr>
         <tr><td><code>get_anomalies</code></td><td>GetAnomalies</td><td>成本異常</td><td><span class="tag on">已測</span></td></tr>
         <tr><td><code>get_dimension_values</code></td><td>GetDimensionValues</td><td>列出可用的維度值，避免模型自己編造 UsageType</td><td><span class="tag off">未實際調用</span></td></tr>
         <tr><td><code>get_price</code></td><td>Pricing GetProducts（CNY）</td><td>查單價，用來估算優化建議能省多少</td><td><span class="tag off">未實際調用</span></td></tr>
@@ -329,7 +334,7 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
     <h2><span class="n">06 · 分析規則</span>System prompt 規定 Agent 只報告數字變化，不從時間或金額的相關性推論原因</h2>
     <div class="two">
       <ul class="plain">
-        <li><b>先回憶：</b>每次分析開始都先調用 <code>recall_context</code>。</li>
+        <li><b>先回憶但不當現況：</b>每次分析先調用 <code>recall_context</code>；其內容只是帶 saved_at 的背景。除非使用者明確說不要重查，回答中的數字必須來自本輪成本工具。</li>
         <li><b>逐層下鑽：</b>總額 → 服務 → UsageType → Region → Tag。</li>
         <li><b>公平比較：</b>先換算成日均再比較，並標註當月數據還不完整。</li>
         <li><b>不心算：</b>所有算式都交給 <code>run_python</code>。</li>
@@ -385,8 +390,8 @@ print(json.loads(body.decode("utf-8")))</pre>
   </section>
 
   <section id="ops">
-    <h2><span class="n">08 · 運維、費用與已知問題</span>目前 Runtime v4 使用智譜 GLM-5.3-Flash；Kimi low 的 500 保留為歷史回滾注意事項</h2>
-    <div class="note"><b>目前狀態：</b>Runtime v4 已回傳 <code>model=glm-5.3-flash</code>。官方建議 temperature 1、top_p 0.95、reasoning_effort max；本專案不明確送出 temperature/reasoning_effort，使用供應商預設，max_tokens 設為 8192。Kimi v3 的 low 工具對話曾回 <code>HTTP 500 server_error</code>，回滾腳本因此選擇已驗證的 <code>reasoning_effort=high</code>。</div>
+    <h2><span class="n">08 · 運維、費用與已知問題</span>目前 Runtime v8 使用智譜 GLM-5.3-Flash low；Kimi low 的 500 保留為歷史回滾注意事項</h2>
+    <div class="note"><b>目前狀態：</b>Runtime v8 已回傳 <code>model=glm-5.3-flash</code>，選定 <code>reasoning_effort=low</code>。官方接受 low / high / max，未設定時預設 max，thinking 不可關閉。修正後 low 的兩輪與快捷問題均完成；Kimi v3 的 low 工具對話曾回 <code>HTTP 500 server_error</code>，回滾腳本因此選擇已驗證的 <code>reasoning_effort=high</code>。</div>
     <div class="two">
       <div>
         <h3>持續產生費用的資源</h3>
@@ -429,7 +434,7 @@ print(json.loads(body.decode("utf-8")))</pre>
   </section>
 
   <footer>
-    依據 AgentCore 中國區 Workshop（bedrock-agentcore 1.24.1 / starter-toolkit 0.3.14 / strands-agents 1.59.0）搭建；2026-11-23 已切換至智譜 glm-5.3-flash 並完成 Runtime v4 驗證。內容反映截至該日的狀態。
+    依據 AgentCore 中國區 Workshop（bedrock-agentcore 1.24.1 / starter-toolkit 0.3.14 / strands-agents 1.59.0）搭建；2026-11-23 已完成智譜 glm-5.3-flash Runtime v8 low 驗證與資料新鮮度修正。內容反映截至該日的狀態。
   </footer>
 </main>
 <script>document.querySelector('main').classList.add('fade');</script>

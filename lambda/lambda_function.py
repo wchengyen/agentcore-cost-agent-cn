@@ -7,12 +7,13 @@ import logging
 import os
 import time
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable
 
 import boto3
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 REGION = os.getenv("AWS_REGION", "cn-north-1")
 CE_REGION = "cn-northwest-1"
@@ -240,18 +241,37 @@ def compare_periods(a_start: str, a_end: str, b_start: str, b_end: str, group_by
 
 
 def get_forecast(start: str, end: str, granularity: str = "MONTHLY") -> dict[str, Any]:
-    _validate_dates(start, end)
+    requested_start = date.fromisoformat(start)
+    requested_end = date.fromisoformat(end)
+    today_utc = datetime.now(timezone.utc).date()
+    effective_start = max(requested_start, today_utc)
+    effective_end = max(requested_end, effective_start + timedelta(days=1))
+    start_was_adjusted = effective_start != requested_start
+    end_was_adjusted = effective_end != requested_end
+    effective_start_text = effective_start.isoformat()
+    effective_end_text = effective_end.isoformat()
     request = {
-        "TimePeriod": {"Start": start, "End": end},
+        "TimePeriod": {"Start": effective_start_text, "End": effective_end_text},
         "Metric": "UNBLENDED_COST",
         "Granularity": granularity.upper(),
         "Filter": _scoped_filter(None),
         "PredictionIntervalLevel": 80,
     }
     response, hit = _cached("get_cost_forecast", request, lambda: _ce.get_cost_forecast(**request))
+    note = (
+        f"requested {start}..{end}; effective {effective_start_text}..{effective_end_text}; "
+        "Cost Explorer forecast Start cannot precede current UTC date"
+        if start_was_adjusted or end_was_adjusted else
+        "not adjusted"
+    )
     return {
-        "start": start,
-        "end_exclusive": end,
+        "requested_start": start,
+        "requested_end_exclusive": end,
+        "start": effective_start_text,
+        "end_exclusive": effective_end_text,
+        "start_adjusted": start_was_adjusted,
+        "end_adjusted": end_was_adjusted,
+        "start_adjusted_note": note,
         "granularity": granularity.upper(),
         "total": response.get("Total"),
         "forecast_results": response.get("ForecastResultsByTime", []),
@@ -271,18 +291,27 @@ def get_ri_sp_coverage_utilization(start: str, end: str) -> dict[str, Any]:
         "sp_utilization": ("get_savings_plans_utilization", {"TimePeriod": period, "Granularity": "MONTHLY", "Filter": scoped}),
     }
     output: dict[str, Any] = {}
+    unavailable: list[dict[str, str]] = []
     all_hit = True
     for name, (method, request) in calls.items():
-        response, hit = _cached(method, request, lambda m=method, r=request: getattr(_ce, m)(**r))
-        all_hit = all_hit and hit
-        if name == "ri_coverage":
-            output[name] = response.get("Total", {})
-        elif name == "ri_utilization":
-            output[name] = response.get("Total", {})
-        elif name == "sp_coverage":
-            output[name] = response.get("Total", {})
-        else:
-            output[name] = response.get("Total", {})
+        try:
+            response, hit = _cached(method, request, lambda m=method, r=request: getattr(_ce, m)(**r))
+            all_hit = all_hit and hit
+            output[name] = {"status": "available", "total": response.get("Total", {})}
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") != "DataUnavailableException":
+                raise
+            all_hit = False
+            detail = {
+                "component": name,
+                "operation": method,
+                "status": "unavailable",
+                "reason": "Cost Explorer returned DataUnavailableException; this can occur when no applicable RI/SP data exists",
+            }
+            output[name] = detail
+            unavailable.append(detail)
+    output["status"] = "partial_unavailable" if unavailable else "available"
+    output["unavailable"] = unavailable
     output["cache_hit"] = all_hit
     output["start"] = start
     output["end_exclusive"] = end
@@ -389,9 +418,17 @@ def recall_context(scope: str) -> dict[str, Any]:
         ScanIndexForward=False,
         Limit=20,
     )
-    findings = [{k: v for k, v in item.items() if k in {"ts", "type", "content", "confirmed"}}
-                for item in response.get("Items", [])]
-    return {"scope": scope, "findings": findings}
+    findings = [{
+        "saved_at": item.get("ts"),
+        "type": item.get("type"),
+        "content": item.get("content"),
+        "confirmed": item.get("confirmed"),
+    } for item in response.get("Items", [])]
+    return {
+        "scope": scope,
+        "note": "背景參考，除非使用者明確要求不重查，所有數字需以本輪成本工具查詢為準",
+        "findings": findings,
+    }
 
 
 def save_finding(scope: str, type: str, content: str, confirmed: bool) -> dict[str, Any]:
