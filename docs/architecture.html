@@ -359,9 +359,13 @@ Set-Location C:\code\agentcode-ce
     <ul class="plain">
       <li>前端只在本機開放，用你的 <code>default</code> profile 呼叫 Runtime，程式裡沒有任何 Key。</li>
       <li>有 5 個快捷問題：上月 Top 5 服務及環比、本月至今成本與預測、RI·SP 覆蓋率與使用率、最近 30 天成本異常、指定服務按 USAGE_TYPE 拆分。</li>
-      <li>可以另外選日期範圍和 group_by，選了會自動加進提問。按「新 session」就開一段全新的對話；留在同一個 session 則可以接著追問。</li>
-      <li>每輪會顯示耗時、各工具調用次數和實際使用的 model ID。read_timeout 設為 600 秒。</li>
+      <li>可以另外選日期範圍和 group_by。對話會保存到 git-ignored 的 <code>frontend/.history/sessions.json</code>，依今天 / 昨天 / 更早分組；可還原、重新命名和只刪本機記錄。</li>
+      <li>摘要完全在本機產生：標題取第一個問題（最多 20 字），事實行只摘錄回答中的 CNY、百分比或首個數字表格列，不新增原因或解讀。</li>
+      <li>每輪顯示耗時、工具小標籤和實際 model ID；原始 JSON 收在摺疊區，並提供複製答案和下載整段 Markdown。</li>
+      <li>Header 每 60 秒最多查一次即時 Runtime 狀態；舊模型 session 會標記並提示不建議延續。read_timeout 為 600 秒。</li>
     </ul>
+    <div class="diagram"><img src="frontend.png" alt="Cost Agent Streamlit 前端，帳號已遮罩" style="display:block;width:100%;height:auto"></div>
+    <p class="src">前端實測：loopback health/root HTTP 200；快捷問題 61.883 秒完成並寫入本機摘要。截圖使用 &lt;ACCOUNT_ID&gt; 遮罩。</p>
 
     <h3>方式二：AgentCore CLI</h3>
 <pre>.\.venv\Scripts\Activate.ps1
@@ -385,7 +389,7 @@ body = b"".join(r["response"])                          <span class="c"># 先把
 print(json.loads(body.decode("utf-8")))</pre>
 
     <h3>調整模型</h3>
-    <p>目前 Runtime v4 使用 <code>glm-5.3-flash</code>、<code>https://open.bigmodel.cn/api/coding/paas/v4</code> 與 Secrets Manager <code>cost-agent/glm-api-key</code>。<code>LLM_TEMPERATURE</code> 和 <code>LLM_REASONING_EFFORT</code> 未設定，因此不送出欄位，採用 GLM 預設值。Key 只由 Runtime 讀取。改完模型設定要重新執行 <code>agentcore deploy</code>，並換新的 session_id。</p>
+    <p>目前 Runtime v9 使用 <code>glm-5.3-flash</code>、<code>https://open.bigmodel.cn/api/coding/paas/v4</code> 與 Secrets Manager <code>cost-agent/glm-api-key</code>。目前選定 <code>LLM_REASONING_EFFORT=low</code>。Key 只由 Runtime 讀取；本機前端的 .env 不會改變已部署 Runtime。改完模型設定要重新執行 <code>agentcore deploy</code>，並換新的 session_id。</p>
     <p>回滾到 Kimi：執行 <code>.\scripts\deploy-kimi-rollback.ps1</code>。舊 secret <code>cost-agent/llm-api-key</code> 保持不變，Runtime 角色同時允許兩個 secret。</p>
   </section>
 

@@ -233,7 +233,9 @@ The rollback script selects `k3.1-pro`, `https://api.kimi.com/coding/v1`, temper
 
 ## Local frontend
 
-The Streamlit UI binds only to `127.0.0.1`, uses local AWS profile `default`, and invokes the AgentCore China data-plane endpoint with a 600-second boto3 read timeout. It contains no AWS keys or LLM key. It provides Markdown chat, switchable UI session history, new-session IDs of at least 33 characters, latency and tool metrics, five quick prompts, optional date range and grouping, and friendly timeout/throttling/not-ready errors.
+The Streamlit UI binds only to `127.0.0.1`, uses local AWS profile `default`, and invokes the AgentCore China data-plane endpoint with a 600-second boto3 read timeout. It contains no AWS keys or LLM key. The header shows the STS account, region, cached live Runtime status/version, and returned model. The main view provides Markdown chat, compact tool/latency chips, collapsible raw metadata, answer copy controls, conversation download, quick prompts, and optional date/group filters.
+
+Conversation history is stored locally in the git-ignored `frontend/.history/sessions.json`. Each session preserves its Runtime session ID, timestamps, turns, latency, tool counts, returned model, and a deterministic summary. The summary title comes from the first prompt and is truncated to 20 characters; one or two fact lines are copied from answer lines containing CNY amounts, percentages, or the first numeric table row. The summarizer adds no interpretation or causes. Sidebar sessions are grouped into 今天 / 昨天 / 更早 and support restore, rename, and local-only deletion. Sessions whose stored model differs from the current model are marked `舊模型`.
 
 Pinned frontend dependencies are `streamlit==1.67.0` and `boto3==1.43.110`.
 
@@ -244,7 +246,24 @@ Install and run:
 .\scripts\run-frontend.ps1
 ```
 
-Open `http://127.0.0.1:8501`. The health endpoint and root page both returned HTTP 200 while bound to `127.0.0.1`; the test process was stopped afterward.
+Open `http://127.0.0.1:8501`.
+
+![Cost Agent Streamlit frontend](docs/frontend.png)
+
+Frontend verification:
+
+- Health endpoint and root page: HTTP 200 on loopback only.
+- Real quick-prompt round trip: 61.883s, returned `glm-5.3-flash`, and used recall ×1, get_cost ×2, compare ×1, run_python ×1, save ×1.
+- The resulting local summary was `上個月成本 Top 5 服務及環比` with extracted CNY and −1.92% facts.
+- Masked screenshot: `docs/frontend.png`; no real account ID is visible.
+- The separate test server was stopped. A pre-existing user-started server on port 8501 was not stopped.
+
+Optional screenshot tooling is pinned in `frontend/requirements-dev.txt` and can be installed from the Tsinghua mirror without downloading a Playwright browser; the test used locally installed Chrome:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r .\frontend\requirements-dev.txt
+```
+
 
 Quick prompts:
 

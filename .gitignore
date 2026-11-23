@@ -3,6 +3,7 @@
 .env.*
 .streamlit/
 **/.streamlit/secrets.toml
+frontend/.history/
 
 # Python environments and caches
 .venv/

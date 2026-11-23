@@ -65,6 +65,18 @@ class RuntimeClient:
         config = Config(connect_timeout=15, read_timeout=600, retries={"mode": "standard", "max_attempts": 5})
         self.control = session.client("bedrock-agentcore-control", endpoint_url=CP_ENDPOINT, config=config)
         self.runtime = session.client("bedrock-agentcore", endpoint_url=DP_ENDPOINT, config=config)
+        self.sts = session.client("sts", config=config)
+
+    def status(self) -> dict[str, Any]:
+        detail = self.control.get_agent_runtime(agentRuntimeId=self.runtime_id)
+        identity = self.sts.get_caller_identity()
+        return {
+            "account_id": identity["Account"],
+            "region": REGION,
+            "runtime_status": detail["status"],
+            "runtime_version": detail.get("agentRuntimeVersion"),
+            "runtime_arn": self.runtime_arn,
+        }
 
     def assert_ready(self) -> None:
         status = self.control.get_agent_runtime(agentRuntimeId=self.runtime_id)["status"]
