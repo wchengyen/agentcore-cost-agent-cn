@@ -10,7 +10,7 @@ from strands.tools.mcp.mcp_client import MCPClient
 
 from agent.code_tools import run_python
 from agent.common import make_model, message_text
-from agent.session_manager import KimiSafeS3SessionManager
+from agent.session_manager import ReasoningSafeS3SessionManager
 from agent.sigv4 import FreshSigV4Auth
 from agent.system_prompt import SYSTEM_PROMPT
 
@@ -38,7 +38,7 @@ def invoke_gateway_agent(
     gateway_url = os.environ["GATEWAY_URL"]
     session_manager = None
     if use_s3_session:
-        session_manager = KimiSafeS3SessionManager(
+        session_manager = ReasoningSafeS3SessionManager(
             session_id=session_id,
             bucket=os.environ["SESSION_BUCKET"],
             prefix="sessions/",
@@ -78,5 +78,6 @@ def invoke_gateway_agent(
             "tool_calls": tool_calls,
             "model_requested": model.requested_model,
             "models_returned": model.returned_models,
-            "reasoning_effort": os.getenv("LLM_REASONING_EFFORT", "low"),
+            "reasoning_effort": os.getenv("LLM_REASONING_EFFORT") or None,
+            "temperature": os.getenv("LLM_TEMPERATURE") or None,
         }

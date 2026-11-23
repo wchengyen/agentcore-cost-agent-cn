@@ -1,8 +1,8 @@
 # AWS China Cost Analysis Agent
 
-Account-scoped cost analysis agent for Amazon Bedrock AgentCore in `cn-north-1`. It uses Kimi through Strands `OpenAIModel`, an AWS_IAM AgentCore Gateway, Lambda cost tools, AgentCore Code Interpreter, S3 short-term sessions, and DynamoDB long-term findings.
+Account-scoped cost analysis agent for Amazon Bedrock AgentCore in `cn-north-1`. It uses Zhipu GLM through Strands `OpenAIModel`, an AWS_IAM AgentCore Gateway, Lambda cost tools, AgentCore Code Interpreter, S3 short-term sessions, and DynamoDB long-term findings.
 
-See the [interactive architecture report](docs/architecture.html), the [2026-11-20 benchmark](docs/architecture.html#flow), and the [known Kimi low-effort HTTP 500 issue](docs/architecture.html#ops).
+See the [interactive architecture report](docs/architecture.html), the [Kimi high baseline and GLM benchmark](docs/architecture.html#flow), and [provider notes and rollback](docs/architecture.html#ops).
 
 ## Security and scope
 
@@ -11,14 +11,14 @@ See the [interactive architecture report](docs/architecture.html), the [2026-11-
 - Cost Explorer uses `https://ce.cn-northwest-1.amazonaws.com.cn`.
 - Pricing uses `https://api.pricing.cn-northwest-1.amazonaws.com.cn` and returns only CNY dimensions.
 - Local model credentials come only from the user-owned, gitignored `.env`.
-- Runtime reads `cost-agent/llm-api-key` from Secrets Manager at process startup. The key is never passed to toolkit commands, code, or logs.
+- Runtime reads the secret named by `LLM_SECRET_NAME` from Secrets Manager at process startup. The current value is `cost-agent/glm-api-key`; `cost-agent/llm-api-key` remains authorized for rollback. Keys are never passed to toolkit commands, code, or logs.
 - Gateway inbound authorization is `AWS_IAM`; MCP requests use fresh Runtime role credentials for each SigV4 signature.
 
 ## Architecture
 
 ```text
-User -> Cost Agent (Strands + Kimi OpenAIModel)
-          |-- KimiSafeS3SessionManager -> cost-agent-mem-<account>-cn-north-1/sessions/
+User -> Cost Agent (Strands + OpenAI-compatible model)
+          |-- ReasoningSafeS3SessionManager -> cost-agent-mem-<account>-cn-north-1/sessions/
           |-- run_python -> AgentCore Code Interpreter
           `-- SigV4 MCP -> AgentCore Gateway (AWS_IAM)
                               `-- cost-agent-tools Lambda
@@ -28,9 +28,9 @@ User -> Cost Agent (Strands + Kimi OpenAIModel)
                                    `-- cost-agent-knowledge DynamoDB
 ```
 
-The Runtime constructs a new `Agent` for every request. No Agent instance is shared across sessions. AgentCore Memory is disabled because it is unavailable in AWS China. `KimiSafeS3SessionManager` removes provider-specific `reasoningContent` blocks when writing and replaying session messages, while retaining text and tool-use blocks.
+The Runtime constructs a new `Agent` for every request. No Agent instance is shared across sessions. AgentCore Memory is disabled because it is unavailable in AWS China. `ReasoningSafeS3SessionManager` removes `reasoningContent`, `reasoning_content`, `reasoning`, and complete `<think>...</think>` traces when writing and replaying session messages, while retaining text and tool-use blocks.
 
-Kimi `k3.1-pro` requires `temperature=1`; the agent uses that value, `max_tokens=8192`, and `LLM_REASONING_EFFORT` (default `low`, accepted values `low`, `high`, `max`). The OpenAI SDK exposes `reasoning_effort` directly, and Strands forwards it from `OpenAIModel.params`; `extra_body` is not used. `VerifiedOpenAIModel` logs the provider-returned `model` field and rejects silent fallback when it differs from the requested `k3.1-pro`.
+The current provider is Zhipu Coding Plan: `glm-5.3-flash` at `https://open.bigmodel.cn/api/coding/paas/v4`. `LLM_TEMPERATURE` and `LLM_REASONING_EFFORT` are optional; when unset, those fields are not sent. GLM then uses its documented defaults: temperature 1, top_p 0.95, thinking enabled, and reasoning effort max. `LLM_MAX_TOKENS` defaults to 8192, below GLM-5.3-Flash's 128K output limit. `VerifiedOpenAIModel` logs and validates the provider-returned model ID.
 
 ## Prerequisites
 
@@ -46,9 +46,10 @@ Copy-Item .\config.example.env .\.env
 
 ```dotenv
 LLM_API_KEY=<your key>
-LLM_MODEL=k3.1-pro
-LLM_BASE_URL=https://api.kimi.com/coding/v1
-LLM_REASONING_EFFORT=low
+LLM_MODEL=glm-5.3-flash
+LLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4
+LLM_SECRET_NAME=cost-agent/glm-api-key
+LLM_MAX_TOKENS=8192
 ```
 
 Never commit `.env` or paste its value into commands, logs, or chat.
@@ -78,7 +79,7 @@ Run P0 through P3 in order. `setup_p1.py` writes the git-ignored live `resource_
 .\scripts\test-p0.ps1
 ```
 
-This checks Python and pinned packages, confirms the STS ARN uses `arn:aws-cn:`, calls the China Cost Explorer endpoint, checks Kimi without printing the key, and tests:
+This checks Python and pinned packages, confirms the STS ARN uses `arn:aws-cn:`, calls the China Cost Explorer endpoint, checks the configured OpenAI-compatible LLM without printing the key, and tests:
 
 ```text
 上個月成本 Top 5 服務及環比
@@ -120,7 +121,7 @@ The verification runs an initial analysis and a follow-up using one S3 session I
 Do not put the key on a command line shared with another user or in shell history. At the explicit checkpoint, the user runs this command in their own PowerShell, replacing the placeholder locally:
 
 ```powershell
-aws secretsmanager create-secret --name cost-agent/llm-api-key --secret-string '<KEY>' --region cn-north-1 --profile default
+aws secretsmanager create-secret --name cost-agent/glm-api-key --secret-string '<KEY>' --region cn-north-1 --profile default
 ```
 
 If the secret already exists, update it with `aws secretsmanager put-secret-value` rather than creating another secret.
@@ -151,7 +152,7 @@ The configure command uses the required shape:
 
 ```powershell
 agentcore configure -e runtime_entry.py -r cn-north-1 -dm -dt direct_code_deploy -rt PYTHON_3_12 -n costagent -ni
-agentcore deploy -a costagent -auc -env "LLM_REASONING_EFFORT=low"
+agentcore deploy -a costagent -auc -env "LLM_SECRET_NAME=cost-agent/glm-api-key" -env "LLM_MODEL=glm-5.3-flash" -env "LLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4"
 ```
 
 Runtime invocation is tested through both `agentcore invoke --session-id` and `invoke_runtime.py` (`boto3`). `verify_p3.py` requires Runtime `READY` and recent CloudWatch events.
@@ -159,8 +160,9 @@ Runtime invocation is tested through both `agentcore invoke --session-id` and `i
 ### Verified P3 deployment
 
 - Runtime ARN: `arn:aws-cn:bedrock-agentcore:cn-north-1:<ACCOUNT_ID>:runtime/costagent-<RUNTIME_SUFFIX>`
-- Runtime version: `3`, status: `READY`
-- Runtime environment includes `LLM_REASONING_EFFORT=low`
+- Runtime version: `4`, status: `READY`
+- Runtime model: `glm-5.3-flash`; returned model ID verified as `glm-5.3-flash`
+- Runtime omits explicit `LLM_TEMPERATURE` and `LLM_REASONING_EFFORT`, using GLM defaults
 - Execution role: `arn:aws-cn:iam::<ACCOUNT_ID>:role/CostAgentRuntimeRole`
 - Runtime log group: `/aws/bedrock-agentcore/runtimes/costagent-<RUNTIME_SUFFIX>-DEFAULT`
 - Deployment bucket: `cost-agent-deploy-<ACCOUNT_ID>-cn-north-1`
@@ -181,9 +183,9 @@ Known deployment diagnostics:
 - The initial boto3 response reader decoded each stream chunk independently and returned `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xe5 in position 1023: unexpected end of data`; it now joins bytes before UTF-8 decoding.
 - The toolkit could not enable Transaction Search because X-Ray lacked `PutLogEvents` on `aws/spans`. Runtime logs and structured Lambda logs are available and verified; Transaction Search remains disabled.
 
-### Low-reasoning benchmark status
+### Historical Kimi low-reasoning benchmark
 
-Runtime version 3 is `READY`, and a simple local request returned `model=k3.1-pro` with `reasoning_effort=low`. Tool-capable requests currently receive an upstream Kimi error before a complete answer:
+Historical Runtime version 3 used `k3.1-pro` with `reasoning_effort=low`. A simple local request returned `model=k3.1-pro`, while tool-capable requests received an upstream Kimi error before a complete answer:
 
 ```text
 openai.InternalServerError: Error code: 500 -
@@ -191,7 +193,34 @@ openai.InternalServerError: Error code: 500 -
 'type': 'server_error'}}
 ```
 
-The same error was reproduced through Runtime, the local Gateway agent, a direct typed `reasoning_effort` request, and `extra_body`. The production configuration retains the typed SDK parameter. The earlier high-effort baseline completed in 111.0 seconds and 105.6 seconds. Low-effort turn 1 failed after 20.393 seconds on its first attempt; a second attempt failed after 35.706 seconds after calling `recall_context`, two `get_cost` calls, `run_python`, and `save_finding`. Its saved finding exactly matched CNY 5,889.38, -1.92%, and EC2 Compute CNY 1,715.12. Low-effort turn 2 in the same session failed after 18.433 seconds after `recall_context` and two `USAGE_TYPE` `get_cost` calls. Those tool results matched `CNW1-BoxUsage:m8i-flex.xlarge` at CNY 1,056.27168; no final model answer or `run_python` percentage was produced. Therefore final-answer quality and the +0.16% presentation cannot be assessed. No cost-analysis tools ran in the failed frontend smoke-test sessions.
+The same error was reproduced through Runtime, the local Gateway agent, a direct typed `reasoning_effort` request, and `extra_body`. That historical Kimi test used the typed SDK parameter; the current GLM configuration omits reasoning effort. The earlier high-effort baseline completed in 111.0 seconds and 105.6 seconds. Low-effort turn 1 failed after 20.393 seconds on its first attempt; a second attempt failed after 35.706 seconds after calling `recall_context`, two `get_cost` calls, `run_python`, and `save_finding`. Its saved finding exactly matched CNY 5,889.38, -1.92%, and EC2 Compute CNY 1,715.12. Low-effort turn 2 in the same session failed after 18.433 seconds after `recall_context` and two `USAGE_TYPE` `get_cost` calls. Those tool results matched `CNW1-BoxUsage:m8i-flex.xlarge` at CNY 1,056.27168; no final model answer or `run_python` percentage was produced. Therefore final-answer quality and the +0.16% presentation cannot be assessed. No cost-analysis tools ran in the failed frontend smoke-test sessions.
+
+## GLM-5.3-Flash benchmark (2026-11-23)
+
+Runtime version 4 returned model ID `glm-5.3-flash`. Local P0 completed in 60.726s. Runtime used fresh GUID session IDs; no explicit temperature or reasoning effort was sent.
+
+| Test | GLM latency | GLM tool calls | Kimi high baseline | Result |
+|---|---:|---|---:|---|
+| Quick model confirmation | 36.023s | recall ×1, save ×1 | n/a | returned `glm-5.3-flash` |
+| Turn 1: previous-month Top 5 | 176.438s | recall ×1, run_python ×1, save ×1 | 111.0s | CNY 5,889.38; -1.92%; EC2 Compute CNY 1,715.12 |
+| Turn 2: first service by USAGE_TYPE | 62.770s | recall ×1, run_python ×1, save ×1 | 105.6s | `CNW1-BoxUsage:m8i-flex.xlarge`, CNY 1,056.27, +0.16% |
+| Month-to-date and forecast | 163.808s | recall ×1, get_cost ×5, get_forecast ×3, run_python ×1, save ×1 | n/a | completed with two rejected past-start forecast attempts |
+| RI/SP coverage and utilization | 93.583s | recall ×1, RI/SP ×3, run_python ×1, save ×1 | n/a | official totals unavailable; `GetSavingsPlansUtilization` returned `DataUnavailableException` |
+| Last 30 days anomalies | 56.347s | recall ×1, get_anomalies ×1, run_python ×2, save ×1 | n/a | zero tool-confirmed anomalies; first Python date expression failed and was corrected |
+
+Quality findings: both benchmark answers matched the supplied ground truth and used `run_python`; no invented dimension was observed; causal explanations were marked `待確認`; required recall/save calls were present. GLM reused confirmed DynamoDB findings instead of issuing fresh `get_cost` calls in the two benchmark turns. Turn 1 labeled EC2 Other with an explanatory parenthetical not present in that turn's live tool output. The forecast agent sent two invalid past-start requests before succeeding with a valid future-only forecast. Exact CE errors were `ValidationException: Earliest supported Start is 2026-11-23` and `DataUnavailableException` from `GetSavingsPlansUtilization`.
+
+Official GLM documentation: [GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash.md), [thinking modes](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode.md), and [function calling](https://docs.bigmodel.cn/cn/guide/capabilities/function-calling.md). The model supports Function Calling, only `tool_choice=auto`, a 128K maximum output, always-enabled thinking, and streamed `reasoning_content`. Content was rephrased for compliance with licensing restrictions.
+
+## Roll back to Kimi
+
+The old `cost-agent/llm-api-key` secret remains unchanged and authorized alongside the GLM secret. One command restores the prior high-effort Kimi configuration and redeploys:
+
+```powershell
+.\scripts\deploy-kimi-rollback.ps1
+```
+
+The rollback script selects `k3.1-pro`, `https://api.kimi.com/coding/v1`, temperature 1, reasoning effort `high`, and `max_tokens=8192`. It does not copy or expose either key.
 
 ## Local frontend
 
@@ -222,7 +251,7 @@ Programmatic smoke test:
 .\.venv\Scripts\python.exe .\frontend\smoke_test.py
 ```
 
-The forecast, RI/SP, and anomaly smoke tests each reached Runtime but received the upstream Kimi HTTP 500 shown above before any tool call.
+The current GLM forecast, RI/SP, and anomaly smoke-test results are documented in the GLM benchmark section below.
 
 ## Tool behavior
 
@@ -250,17 +279,17 @@ Runtime logs are under `/aws/bedrock-agentcore/runtimes/`; Lambda logs are under
 
 ## Cost notes
 
-Cost Explorer charges per API request, so identical CE calls are cached for six hours. AgentCore Runtime and Gateway remain deployed and can continue generating charges even while this project is not being edited; run the guarded cleanup when they are no longer needed. Other possible charges include Code Interpreter active time, Lambda, DynamoDB, S3, CloudWatch Logs, and Kimi tokens. Kimi charges do not appear on the AWS bill. `code_session` stops Code Interpreter sessions after each call.
+Cost Explorer charges per API request, so identical CE calls are cached for six hours. AgentCore Runtime and Gateway remain deployed and can continue generating charges even while this project is not being edited; run the guarded cleanup when they are no longer needed. Other possible charges include Code Interpreter active time, Lambda, DynamoDB, S3, CloudWatch Logs, and external-model tokens. GLM Coding Plan and Kimi rollback charges do not appear on the AWS bill. `code_session` stops Code Interpreter sessions after each call.
 
 ## Cleanup
 
-`cleanup.py` is intentionally guarded and is never run automatically. It covers every Runtime version and endpoint, the Runtime execution role, deployment bucket, S3 session bucket, both DynamoDB tables, Gateway target and Gateway, Lambda, project IAM roles, and CloudWatch log groups. The user-managed LLM secret is preserved unless `--delete-secret` is explicitly supplied.
+`cleanup.py` is intentionally guarded and is never run automatically. It covers every Runtime version and endpoint, the Runtime execution role, deployment bucket, S3 session bucket, both DynamoDB tables, Gateway target and Gateway, Lambda, project IAM roles, and CloudWatch log groups. Both model secrets are preserved by default. `--delete-secret` deletes only the current secret recorded in `resource_config.json`; the Kimi rollback secret remains untouched unless separately removed by its owner.
 
 ```powershell
 . .\scripts\set-env.ps1
 .\.venv\Scripts\python.exe .\cleanup.py --dry-run
 .\.venv\Scripts\python.exe .\cleanup.py --confirm DELETE
-# Also permanently delete the LLM secret only when explicitly intended:
+# Also permanently delete the current GLM secret only when explicitly intended:
 .\.venv\Scripts\python.exe .\cleanup.py --confirm DELETE --delete-secret
 ```
 

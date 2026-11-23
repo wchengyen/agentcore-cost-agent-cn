@@ -1,4 +1,4 @@
-"""Shared configuration and result helpers."""
+"""Shared provider-agnostic LLM configuration and result helpers."""
 from __future__ import annotations
 
 import os
@@ -7,8 +7,9 @@ from typing import Any
 
 from agent.verified_openai import VerifiedOpenAIModel
 
-DEFAULT_MODEL = "k3.1-pro"
-DEFAULT_BASE_URL = "https://api.kimi.com/coding/v1"
+DEFAULT_MODEL = "glm-5.3-flash"
+DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/coding/paas/v4"
+DEFAULT_MAX_TOKENS = 8192
 
 
 def load_dotenv(path: str | Path = ".env") -> None:
@@ -30,21 +31,32 @@ def require_api_key() -> str:
     return key
 
 
+def _optional_float(name: str) -> float | None:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return None
+    return float(raw)
+
+
 def make_model(api_key: str | None = None) -> VerifiedOpenAIModel:
-    reasoning_effort = os.getenv("LLM_REASONING_EFFORT", "low").lower()
-    if reasoning_effort not in {"low", "high", "max"}:
-        raise ValueError("LLM_REASONING_EFFORT must be low, high, or max")
+    params: dict[str, Any] = {
+        "max_tokens": int(os.getenv("LLM_MAX_TOKENS", str(DEFAULT_MAX_TOKENS))),
+    }
+    temperature = _optional_float("LLM_TEMPERATURE")
+    if temperature is not None:
+        params["temperature"] = temperature
+    reasoning_effort = os.getenv("LLM_REASONING_EFFORT", "").strip().lower()
+    if reasoning_effort:
+        if reasoning_effort not in {"low", "high", "max"}:
+            raise ValueError("LLM_REASONING_EFFORT must be unset, low, high, or max")
+        params["reasoning_effort"] = reasoning_effort
     return VerifiedOpenAIModel(
         client_args={
             "api_key": api_key or require_api_key(),
             "base_url": os.getenv("LLM_BASE_URL", DEFAULT_BASE_URL),
         },
         model_id=os.getenv("LLM_MODEL", DEFAULT_MODEL),
-        params={
-            "temperature": 1,
-            "max_tokens": 8192,
-            "reasoning_effort": reasoning_effort,
-        },
+        params=params,
     )
 
 

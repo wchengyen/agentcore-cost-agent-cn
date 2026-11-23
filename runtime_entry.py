@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 def _load_api_key_at_startup() -> str:
-    secret_name = os.getenv("LLM_SECRET_NAME", "cost-agent/llm-api-key")
+    secret_name = os.environ.get("LLM_SECRET_NAME")
+    if not secret_name:
+        raise RuntimeError("LLM_SECRET_NAME is required")
     response = boto3.client("secretsmanager", region_name=REGION).get_secret_value(SecretId=secret_name)
     value = response.get("SecretString")
     if not value:

@@ -75,13 +75,13 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
   <div class="lede">
     <div>
       <p>這份文件介紹一個部署在 <b>Amazon Bedrock AgentCore（北京區）</b>上的成本分析 Agent。使用者用中文提問，Agent 會自己決定要查哪些 Cost Explorer 數據，在沙盒裡做計算，最後回報成本變化。</p>
-      <p>中國區的 AgentCore 沒有 Memory，也不能用 Bedrock 模型，所以有兩處自建：短期記憶用 S3 存對話歷史，長期記憶用 DynamoDB 存結論；模型則改走 OpenAI 兼容的 Kimi API。其他部分都用 AgentCore 的托管能力。</p>
+      <p>中國區的 AgentCore 沒有 Memory，也不能用 Bedrock 模型，所以有兩處自建：短期記憶用 S3 存對話歷史，長期記憶用 DynamoDB 存結論；模型則改走 OpenAI 兼容的智譜 GLM API。其他部分都用 AgentCore 的托管能力。</p>
     </div>
     <dl class="facts">
-      <div><dt>Runtime</dt><dd>costagent-&lt;RUNTIME_SUFFIX&gt; · v3</dd></div>
+      <div><dt>Runtime</dt><dd>costagent-&lt;RUNTIME_SUFFIX&gt; · v4</dd></div>
       <div><dt>Gateway</dt><dd>&lt;GATEWAY_ID&gt;</dd></div>
       <div><dt>MCP 工具數</dt><dd>9</dd></div>
-      <div><dt>模型</dt><dd>k3.1-pro（Kimi Code）</dd></div>
+      <div><dt>模型</dt><dd>glm-5.3-flash（智譜 Coding Plan）</dd></div>
       <div><dt>成本 API</dt><dd>ce.cn-northwest-1</dd></div>
       <div><dt>成本口徑</dt><dd>UnblendedCost</dd></div>
       <div><dt>專案路徑</dt><dd>C:\code\agentcode-ce</dd></div>
@@ -133,12 +133,12 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
   <text class="t" x="260" y="126">Strands Agent（每次請求新建）</text>
   <text class="s" x="260" y="148">system prompt：回憶 → 下鑽 → 沙盒計算 → 只報事實 → 寫回</text>
   <text class="m" x="260" y="172">VerifiedOpenAIModel</text>
-  <text class="s" x="260" y="190">檢查 Kimi 回傳的 model 是否為 k3.1-pro</text>
+  <text class="s" x="260" y="190">檢查供應商回傳的 model 是否為 glm-5.3-flash</text>
   <text class="m" x="260" y="214">SigV4HttpxAuth</text>
   <text class="s" x="260" y="232">每次簽名重新取得角色臨時憑證</text>
 
   <rect class="bx" x="245" y="275" width="305" height="80"/>
-  <text class="t" x="260" y="301">KimiSafeS3SessionManager</text>
+  <text class="t" x="260" y="301">ReasoningSafeS3SessionManager</text>
   <text class="s" x="260" y="322">短期記憶：按 session_id 存取對話歷史</text>
   <text class="s" x="260" y="340">存入與重放時去掉 reasoningContent</text>
 
@@ -152,12 +152,12 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
 
   <!-- right side external -->
   <rect class="bx" x="630" y="30" width="170" height="66"/>
-  <text class="t" x="644" y="56">Kimi API</text>
-  <text class="m" x="644" y="78">api.kimi.com/coding/v1</text>
+  <text class="t" x="644" y="56">智譜 GLM API</text>
+  <text class="m" x="644" y="78">open.bigmodel.cn/api/coding/paas/v4</text>
 
   <rect class="bx" x="820" y="30" width="160" height="66"/>
   <text class="t" x="834" y="56">Secrets Manager</text>
-  <text class="m" x="834" y="78">cost-agent/llm-api-key</text>
+  <text class="m" x="834" y="78">cost-agent/glm-api-key</text>
 
   <rect class="bx" x="630" y="130" width="170" height="66"/>
   <text class="t" x="644" y="156">Code Interpreter</text>
@@ -255,7 +255,7 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
     <div class="tbl"><table>
       <thead><tr><th style="width:120px">層</th><th style="width:210px">實作</th><th>存什麼</th><th>怎麼生效</th></tr></thead>
       <tbody>
-        <tr><td><b>短期記憶</b></td><td>Strands S3SessionManager 的子類 <code>KimiSafeS3SessionManager</code><br><code>s3://cost-agent-mem-&lt;ACCOUNT_ID&gt;-cn-north-1/sessions/</code></td><td>同一個 session 的完整對話，包括工具調用和工具結果</td><td>同一個 <code>runtimeSessionId</code> 的下一輪會自動載入歷史，所以可以問「剛才第一名的服務再拆開」。存入時會去掉 Kimi 的 reasoningContent，避免多輪對話時出錯。</td></tr>
+        <tr><td><b>短期記憶</b></td><td>Strands S3SessionManager 的子類 <code>ReasoningSafeS3SessionManager</code><br><code>s3://cost-agent-mem-&lt;ACCOUNT_ID&gt;-cn-north-1/sessions/</code></td><td>同一個 session 的完整對話，包括工具調用和工具結果</td><td>同一個 <code>runtimeSessionId</code> 的下一輪會自動載入歷史，所以可以問「剛才第一名的服務再拆開」。存入與重放時會移除 reasoningContent、reasoning_content、reasoning 與完整 think 標籤區塊。</td></tr>
         <tr><td><b>長期記憶</b></td><td>DynamoDB <code>cost-agent-knowledge</code><br>PK=scope，SK=ts</td><td>帳號基線、分析結論、使用者偏好。每筆有 <code>confirmed</code> 欄位，區分「已確認」和「待確認」</td><td>每次分析開始時先調用 <code>recall_context</code>，結束時調用 <code>save_finding</code>。開新的 session 也能讀到上次的結論。</td></tr>
         <tr><td><b>查詢快取</b></td><td>DynamoDB <code>cost-agent-ce-cache</code><br>key = 請求參數的 SHA-256，TTL 6 小時</td><td>Cost Explorer 的回應（已經裁剪成 Top-N）</td><td>CE API 每次請求都收費。完全相同的查詢在 6 小時內直接回傳快取，回應裡會帶 <code>cache_hit=true</code>。</td></tr>
       </tbody>
@@ -268,7 +268,7 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
     <div class="two">
       <ol class="steps">
         <li><b>前端調用 Runtime。</b>Streamlit 用本機 <code>default</code> profile 的憑證做 SigV4 簽名，呼叫 <code>InvokeAgentRuntime</code>，帶上 prompt 和長度至少 33 字元的 session_id。</li>
-        <li><b>Runtime 建立 Agent。</b>入口函數用 Secrets Manager 讀到的 Key 建立 Kimi 模型，用 session_id 載入 S3 裡的歷史，再從 Gateway 載入 MCP 工具清單，加上 <code>run_python</code>。</li>
+        <li><b>Runtime 建立 Agent。</b>入口函數用 <code>LLM_SECRET_NAME</code> 指定的 Secrets Manager Key 建立 OpenAI 兼容模型，用 session_id 載入 S3 裡的歷史，再從 Gateway 載入 MCP 工具清單，加上 <code>run_python</code>。</li>
         <li><b>回憶。</b>模型先調用 <code>recall_context</code>，從 DynamoDB 讀出這個帳號的基線和之前的結論。</li>
         <li><b>查數據。</b>模型調用 <code>get_cost</code>，查上個月和前一個月、按 SERVICE 分組的成本。請求經過 Gateway（SigV4 驗證）→ Lambda → 快取沒命中 → 呼叫 <code>GetCostAndUsage</code>。</li>
         <li><b>裁剪。</b>Lambda 只回 Top-N、「其他」合計和總額，預設排除 Credit 和 Refund，並用 LINKED_ACCOUNT 限定只算本帳號。</li>
@@ -280,7 +280,7 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
         <li><b>回傳。</b>Runtime 把回答、各工具調用次數、實際使用的 model ID 一起回傳。整段對話寫進 S3，每一步都有日誌寫入 CloudWatch。</li>
       </ol>
     </div>
-    <h3>實測結果（reasoning_effort = high）</h3>
+    <h3>實測基線（Kimi k3.1-pro，reasoning_effort = high）</h3>
     <div class="tbl"><table>
       <thead><tr><th>提問</th><th class="num">耗時</th><th>調用的工具</th><th>關鍵數字</th></tr></thead>
       <tbody>
@@ -290,6 +290,19 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
       </tbody>
     </table></div>
     <p class="src">資料來源：Kiro 在 Runtime v2 上的 P3 最終驗證（session p3-final-sdk-20261120-…）。</p>
+    <h3>智譜 GLM-5.3-Flash（Runtime v4，2026-11-23）</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>提問</th><th class="num">GLM 耗時</th><th>工具</th><th>結果 / 品質</th></tr></thead>
+      <tbody>
+        <tr><td>快速模型確認</td><td class="num">36.0 s</td><td>recall ×1、save ×1</td><td>回傳 model=glm-5.3-flash</td></tr>
+        <tr><td>上月 Top 5</td><td class="num">176.4 s</td><td>recall ×1、run_python ×1、save ×1</td><td>5,889.38、−1.92%、EC2 Compute 1,715.12；引用長期記憶，未重查 get_cost</td></tr>
+        <tr><td>第一名按 USAGE_TYPE 拆分</td><td class="num">62.8 s</td><td>recall ×1、run_python ×1、save ×1</td><td>m8i-flex.xlarge 1,056.27、+0.16%；引用已確認資料</td></tr>
+        <tr><td>本月至今與預測</td><td class="num">163.8 s</td><td>get_cost ×5、get_forecast ×3、run_python ×1</td><td>完成；兩次過去日期 forecast 被 CE 拒絕後改用有效未來日期</td></tr>
+        <tr><td>RI / SP</td><td class="num">93.6 s</td><td>RI/SP ×3、run_python ×1</td><td>GetSavingsPlansUtilization 回 DataUnavailableException，未提供官方比率</td></tr>
+        <tr><td>最近 30 天異常</td><td class="num">56.3 s</td><td>get_anomalies ×1、run_python ×2</td><td>0 個工具證實異常；首次日期算式錯誤後已修正</td></tr>
+      </tbody>
+    </table></div>
+    <p class="src">兩輪 ground truth 與 Kimi high 基線一致；GLM Turn 1 較慢 65.4 秒，Turn 2 較快 42.8 秒。所有完成的回答都有 save_finding，原因推論標記待確認。</p>
   </section>
 
   <section id="tools">
@@ -300,9 +313,9 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
       <tbody>
         <tr><td><code>get_cost</code></td><td>GetCostAndUsage</td><td>按時間、粒度、維度（SERVICE / USAGE_TYPE / REGION / LINKED_ACCOUNT / TAG）查成本，回傳 Top-N 加「其他」</td><td><span class="tag on">已測</span></td></tr>
         <tr><td><code>compare_periods</code></td><td>GetCostAndUsage ×2</td><td>兩段期間按日均比較，列出變化最大的項目</td><td><span class="tag on">已測</span></td></tr>
-        <tr><td><code>get_forecast</code></td><td>GetCostForecast</td><td>成本預測（UNBLENDED_COST）</td><td><span class="tag off">未實際調用</span></td></tr>
-        <tr><td><code>get_ri_sp_coverage_utilization</code></td><td>GetReservationCoverage / Utilization、GetSavingsPlansCoverage / Utilization</td><td>RI 和 SP 的覆蓋率與使用率</td><td><span class="tag off">未實際調用</span></td></tr>
-        <tr><td><code>get_anomalies</code></td><td>GetAnomalies</td><td>成本異常</td><td><span class="tag off">未實際調用</span></td></tr>
+        <tr><td><code>get_forecast</code></td><td>GetCostForecast</td><td>成本預測（UNBLENDED_COST）</td><td><span class="tag on">已測</span></td></tr>
+        <tr><td><code>get_ri_sp_coverage_utilization</code></td><td>GetReservationCoverage / Utilization、GetSavingsPlansCoverage / Utilization</td><td>RI 和 SP 的覆蓋率與使用率</td><td><span class="tag part">已調用；SP utilization 資料不可用</span></td></tr>
+        <tr><td><code>get_anomalies</code></td><td>GetAnomalies</td><td>成本異常</td><td><span class="tag on">已測</span></td></tr>
         <tr><td><code>get_dimension_values</code></td><td>GetDimensionValues</td><td>列出可用的維度值，避免模型自己編造 UsageType</td><td><span class="tag off">未實際調用</span></td></tr>
         <tr><td><code>get_price</code></td><td>Pricing GetProducts（CNY）</td><td>查單價，用來估算優化建議能省多少</td><td><span class="tag off">未實際調用</span></td></tr>
         <tr><td><code>recall_context</code></td><td>DynamoDB Query</td><td>讀取長期記憶</td><td><span class="tag on">已測</span></td></tr>
@@ -367,12 +380,13 @@ body = b"".join(r["response"])                          <span class="c"># 先把
 print(json.loads(body.decode("utf-8")))</pre>
 
     <h3>調整模型</h3>
-    <p>模型設定都是環境變數：<code>LLM_MODEL</code>、<code>LLM_BASE_URL</code>、<code>LLM_REASONING_EFFORT</code>（只接受 low / high / max）。Key 放在 Secrets Manager 的 <code>cost-agent/llm-api-key</code>。改完要重新執行 <code>agentcore deploy</code>（步驟見 README），然後<b>換一個新的 session_id</b>，因為換模型或換推理強度後，舊對話的快取就失效了。</p>
+    <p>目前 Runtime v4 使用 <code>glm-5.3-flash</code>、<code>https://open.bigmodel.cn/api/coding/paas/v4</code> 與 Secrets Manager <code>cost-agent/glm-api-key</code>。<code>LLM_TEMPERATURE</code> 和 <code>LLM_REASONING_EFFORT</code> 未設定，因此不送出欄位，採用 GLM 預設值。Key 只由 Runtime 讀取。改完模型設定要重新執行 <code>agentcore deploy</code>，並換新的 session_id。</p>
+    <p>回滾到 Kimi：執行 <code>.\scripts\deploy-kimi-rollback.ps1</code>。舊 secret <code>cost-agent/llm-api-key</code> 保持不變，Runtime 角色同時允許兩個 secret。</p>
   </section>
 
   <section id="ops">
-    <h2><span class="n">08 · 運維、費用與已知問題</span>目前 Runtime v3 用的 low 推理強度在帶工具的對話中會遇到 Kimi 500 錯誤，建議先改回 high</h2>
-    <div class="note"><b>已知問題：</b>Runtime v3 設定為 <code>LLM_REASONING_EFFORT=low</code>。測試時，只要請求帶了工具，Kimi 就經常回 <code>HTTP 500 server_error</code>：預測、RI/SP、異常這 3 個快捷問題都在第一個請求就失敗。中間查到的數字和 high 模式完全一致，但沒有完成最終回答。目前還不能確定是 low 參數造成的，還是 Kimi 當時服務不穩定，需要用 high 對照測試才能下結論。在那之前，建議 Runtime 先改回 <code>high</code>。</div>
+    <h2><span class="n">08 · 運維、費用與已知問題</span>目前 Runtime v4 使用智譜 GLM-5.3-Flash；Kimi low 的 500 保留為歷史回滾注意事項</h2>
+    <div class="note"><b>目前狀態：</b>Runtime v4 已回傳 <code>model=glm-5.3-flash</code>。官方建議 temperature 1、top_p 0.95、reasoning_effort max；本專案不明確送出 temperature/reasoning_effort，使用供應商預設，max_tokens 設為 8192。Kimi v3 的 low 工具對話曾回 <code>HTTP 500 server_error</code>，回滾腳本因此選擇已驗證的 <code>reasoning_effort=high</code>。</div>
     <div class="two">
       <div>
         <h3>持續產生費用的資源</h3>
@@ -381,14 +395,15 @@ print(json.loads(body.decode("utf-8")))</pre>
           <li>Cost Explorer API：每次請求都收費（有 6 小時快取可以減少次數）</li>
           <li>Code Interpreter：按 session 計費</li>
           <li>DynamoDB、S3、CloudWatch Logs：按用量計費</li>
-          <li>Kimi：按你的 Kimi Code 方案額度扣用</li>
+          <li>智譜 GLM Coding Plan：按套餐積分與規則扣用；回滾 Kimi 時由 Kimi Code 方案計費</li>
         </ul>
         <p class="src">實際價格請以 AWS 中國區官網定價頁和帳單為準。</p>
       </div>
       <div>
         <h3>中國區踩過的坑</h3>
         <ul class="plain">
-          <li>k3.1-pro 的 temperature 只接受 1，而且不能關閉 thinking</li>
+          <li>GLM-5.3-Flash 強制 thinking，Function Calling 的 tool_choice 僅支持 auto，reasoning 由 reasoning_content 返回</li>
+          <li>Kimi k3.1-pro 的 temperature 只接受 1；歷史 low 模式工具請求曾回 HTTP 500</li>
           <li>開啟 thinking 時不能強制指定 <code>tool_choice</code>，會回 400</li>
           <li>max_tokens 需要 8192，否則推理還沒完成就會被截斷</li>
           <li>Gateway schema 不接受 enum、default、minimum、maximum，參數範圍改在 Lambda 裡校驗</li>
@@ -405,16 +420,16 @@ print(json.loads(body.decode("utf-8")))</pre>
         <tr><td>運算</td><td>Lambda <code>cost-agent-tools</code></td></tr>
         <tr><td>存儲</td><td>DynamoDB <code>cost-agent-ce-cache</code>、<code>cost-agent-knowledge</code>；S3 <code>cost-agent-mem-&lt;ACCOUNT_ID&gt;-cn-north-1</code>、<code>cost-agent-deploy-&lt;ACCOUNT_ID&gt;-cn-north-1</code></td></tr>
         <tr><td>IAM</td><td><code>CostAgentRuntimeRole</code>、<code>CostAgentGatewayRole</code>、<code>CostAgentToolsLambdaRole</code></td></tr>
-        <tr><td>密鑰</td><td>Secrets Manager <code>cost-agent/llm-api-key</code>（清理時預設保留）</td></tr>
+        <tr><td>密鑰</td><td>Secrets Manager <code>cost-agent/glm-api-key</code>（目前）與 <code>cost-agent/llm-api-key</code>（Kimi 回滾；清理時預設保留）</td></tr>
       </tbody>
     </table></div>
 <pre>.\.venv\Scripts\python.exe .\cleanup.py --dry-run                     <span class="c"># 只列出會刪除的資源</span>
 .\.venv\Scripts\python.exe .\cleanup.py --confirm DELETE              <span class="c"># 刪除全部資源，保留 secret</span>
-.\.venv\Scripts\python.exe .\cleanup.py --confirm DELETE --delete-secret</pre>
+.\.venv\Scripts\python.exe .\cleanup.py --confirm DELETE --delete-secret <span class="c"># 只刪目前記錄的 GLM secret；Kimi rollback secret 保留</span></pre>
   </section>
 
   <footer>
-    依據 AgentCore 中國區 Workshop（bedrock-agentcore 1.24.1 / starter-toolkit 0.3.14 / strands-agents 1.59.0）搭建，並由 Kiro 在 2026-11-20 實機驗證 P0–P3。內容反映截至該日的狀態。
+    依據 AgentCore 中國區 Workshop（bedrock-agentcore 1.24.1 / starter-toolkit 0.3.14 / strands-agents 1.59.0）搭建；2026-11-23 已切換至智譜 glm-5.3-flash 並完成 Runtime v4 驗證。內容反映截至該日的狀態。
   </footer>
 </main>
 <script>document.querySelector('main').classList.add('fade');</script>

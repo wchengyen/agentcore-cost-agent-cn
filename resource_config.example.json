@@ -18,5 +18,9 @@
   "runtime_name": "costagent",
   "runtime_id": "costagent-<RUNTIME_SUFFIX>",
   "runtime_arn": "arn:aws-cn:bedrock-agentcore:cn-north-1:<ACCOUNT_ID>:runtime/costagent-<RUNTIME_SUFFIX>",
-  "runtime_log_group": "/aws/bedrock-agentcore/runtimes/costagent-<RUNTIME_SUFFIX>-DEFAULT"
+  "runtime_log_group": "/aws/bedrock-agentcore/runtimes/costagent-<RUNTIME_SUFFIX>-DEFAULT",
+  "llm_secret_name": "cost-agent/glm-api-key",
+  "llm_secret_arn": "arn:aws-cn:secretsmanager:cn-north-1:<ACCOUNT_ID>:secret:cost-agent/glm-api-key-<SUFFIX>",
+  "rollback_llm_secret_name": "cost-agent/llm-api-key",
+  "rollback_llm_secret_arn": "arn:aws-cn:secretsmanager:cn-north-1:<ACCOUNT_ID>:secret:cost-agent/llm-api-key-<SUFFIX>"
 }

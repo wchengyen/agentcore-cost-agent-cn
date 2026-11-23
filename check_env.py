@@ -81,14 +81,14 @@ def main() -> int:
     if key:
         try:
             from openai import OpenAI
-            response = OpenAI(api_key=key, base_url=os.getenv("LLM_BASE_URL", "https://api.kimi.com/coding/v1")).chat.completions.create(
-                model=os.getenv("LLM_MODEL", "k3.1-pro"),
+            response = OpenAI(api_key=key, base_url=os.getenv("LLM_BASE_URL", "https://open.bigmodel.cn/api/coding/paas/v4")).chat.completions.create(
+                model=os.getenv("LLM_MODEL", "glm-5.3-flash"),
                 max_tokens=8,
                 messages=[{"role": "user", "content": "reply pong"}],
             )
-            report(bool(response.choices), "Kimi LLM reachable")
+            report(bool(response.choices), "OpenAI-compatible LLM reachable")
         except Exception as exc:
-            report(False, "Kimi LLM reachable", type(exc).__name__)
+            report(False, "OpenAI-compatible LLM reachable", f"{type(exc).__name__}: {str(exc)[:160]}")
 
     print()
     if failed:

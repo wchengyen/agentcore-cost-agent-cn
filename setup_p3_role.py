@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Create the Runtime execution role after the user creates the LLM secret."""
+"""Create/update the Runtime role for current and rollback LLM secrets."""
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -11,7 +12,8 @@ import boto3
 ROOT = Path(__file__).resolve().parent
 REGION = "cn-north-1"
 ROLE_NAME = "CostAgentRuntimeRole"
-SECRET_NAME = "cost-agent/llm-api-key"
+CURRENT_SECRET_NAME = os.getenv("LLM_SECRET_NAME", "cost-agent/glm-api-key")
+ROLLBACK_SECRET_NAME = os.getenv("ROLLBACK_LLM_SECRET_NAME", "cost-agent/llm-api-key")
 session = boto3.Session(profile_name="default", region_name=REGION)
 iam = session.client("iam")
 secrets = session.client("secretsmanager")
@@ -19,8 +21,11 @@ s3 = session.client("s3")
 config_path = ROOT / "resource_config.json"
 config = json.loads(config_path.read_text(encoding="utf-8"))
 
-# This confirms existence only. SecretString is never requested or printed.
-secret_arn = secrets.describe_secret(SecretId=SECRET_NAME)["ARN"]
+# Metadata only. SecretString is never requested or printed.
+secret_arns = []
+for secret_name in dict.fromkeys((CURRENT_SECRET_NAME, ROLLBACK_SECRET_NAME)):
+    secret_arns.append(secrets.describe_secret(SecretId=secret_name)["ARN"])
+
 trust = {"Version": "2012-10-17", "Statement": [{
     "Effect": "Allow", "Principal": {"Service": "bedrock-agentcore.amazonaws.com"}, "Action": "sts:AssumeRole"
 }]}
@@ -48,7 +53,7 @@ policy = {"Version": "2012-10-17", "Statement": [
      "Resource": config["session_bucket_arn"] + "/sessions/*"},
     {"Sid": "KnowledgeAndCache", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query"],
      "Resource": [config["cache_table_arn"], config["knowledge_table_arn"]]},
-    {"Sid": "ReadLlmSecret", "Effect": "Allow", "Action": "secretsmanager:GetSecretValue", "Resource": secret_arn},
+    {"Sid": "ReadLlmSecrets", "Effect": "Allow", "Action": "secretsmanager:GetSecretValue", "Resource": secret_arns},
     {"Sid": "RuntimeLogs", "Effect": "Allow", "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
      "Resource": f"arn:aws-cn:logs:{REGION}:{config['account_id']}:log-group:/aws/bedrock-agentcore/*"},
     {"Sid": "Observability", "Effect": "Allow", "Action": ["cloudwatch:PutMetricData", "xray:PutTraceSegments", "xray:PutSpans"],
@@ -57,8 +62,10 @@ policy = {"Version": "2012-10-17", "Statement": [
 iam.put_role_policy(RoleName=ROLE_NAME, PolicyName="CostAgentRuntimePolicy", PolicyDocument=json.dumps(policy))
 config["runtime_role_name"] = ROLE_NAME
 config["runtime_role_arn"] = role["Arn"]
-config["llm_secret_name"] = SECRET_NAME
-config["llm_secret_arn"] = secret_arn
+config["llm_secret_name"] = CURRENT_SECRET_NAME
+config["llm_secret_arn"] = secret_arns[0]
+config["rollback_llm_secret_name"] = ROLLBACK_SECRET_NAME
+config["rollback_llm_secret_arn"] = secret_arns[-1]
 
 deployment_bucket = f"cost-agent-deploy-{config['account_id']}-{REGION}"
 try:
@@ -74,4 +81,10 @@ s3.put_bucket_encryption(Bucket=deployment_bucket, ServerSideEncryptionConfigura
 config["deployment_bucket"] = deployment_bucket
 config["deployment_bucket_arn"] = f"arn:aws-cn:s3:::{deployment_bucket}"
 config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
-print(json.dumps({"runtime_role_arn": role["Arn"], "secret_name": SECRET_NAME, "deployment_bucket": deployment_bucket}, indent=2))
+print(json.dumps({
+    "runtime_role_arn": role["Arn"],
+    "current_secret_name": CURRENT_SECRET_NAME,
+    "rollback_secret_name": ROLLBACK_SECRET_NAME,
+    "allowed_secret_count": len(set(secret_arns)),
+    "deployment_bucket": deployment_bucket,
+}, indent=2))
