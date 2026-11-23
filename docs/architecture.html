@@ -307,7 +307,7 @@ footer{margin-top:56px;padding:28px 0 48px;border-top:1px solid var(--page-rule)
         <tr><td>最近 30 天異常（最終 v9）</td><td class="num">63.735 s</td><td>Python ×2、anomalies ×1、cost ×1；0 個工具證實異常，並查詢滾動窗口總額</td></tr>
       </tbody>
     </table></div>
-    <p class="src">Runtime v9 最終使用 low。修正後，即使 knowledge table 保留舊 finding，T1/T2 仍先做本輪查詢；記憶數字只能標成歷史結論並帶 saved_at。最終 v9 T1 sanity 為 49.319 秒，ground truth 全部相符。Kimi high 基線為 111.0 / 105.6 秒，修正前 GLM max 為 176.4 / 62.8 秒。</p>
+    <p class="src">Runtime v9 最終使用 low。修正後，即使 knowledge table 保留舊 finding，T1/T2 仍先做本輪查詢；記憶數字只能標成歷史結論並帶 saved_at。最終 v9 T1 sanity 為 49.319 秒，ground truth 全部相符。Q3 的工具證實事實是 anomaly count=0；「沒有服務級突增」因未做服務時間序列比較，屬超出本輪證據的措辭。Kimi high 基線為 111.0 / 105.6 秒，修正前 GLM max 為 176.4 / 62.8 秒。</p>
   </section>
 
   <section id="tools">
